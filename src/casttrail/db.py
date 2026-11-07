@@ -1,7 +1,8 @@
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import MetaData, event, text
+from sqlalchemy import DateTime, MetaData, event, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import (
@@ -11,9 +12,10 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.types import TypeDecorator
 
 if TYPE_CHECKING:
-    from sqlalchemy.engine import Connection
+    from sqlalchemy.engine import Connection, Dialect
     from sqlalchemy.pool import ConnectionPoolEntry
 
 # Stable constraint names so Alembic batch migrations on SQLite can address them.
@@ -30,6 +32,62 @@ class Base(DeclarativeBase):
     """Declarative base for every persisted model."""
 
     metadata = MetaData(naming_convention=NAMING_CONVENTION)
+
+
+def utc_now() -> datetime:
+    """Return the current time as an aware UTC datetime.
+
+    Returns:
+        The current moment in UTC.
+    """
+    return datetime.now(UTC)
+
+
+class UtcDateTime(TypeDecorator[datetime]):
+    """A timestamp stored as UTC and always returned timezone-aware.
+
+    SQLite has no timezone support and would hand back naive values, which then
+    cannot be compared with aware ones.
+    """
+
+    impl = DateTime
+    cache_ok = True
+
+    def process_bind_param(
+        self, value: datetime | None, dialect: Dialect
+    ) -> datetime | None:
+        """Convert an aware datetime to naive UTC for storage.
+
+        Args:
+            value: The value being stored.
+            dialect: The database dialect.
+
+        Returns:
+            The naive UTC datetime, or ``None``.
+
+        Raises:
+            ValueError: If the datetime has no timezone.
+        """
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            msg = "Timestamps must be timezone-aware"
+            raise ValueError(msg)
+        return value.astimezone(UTC).replace(tzinfo=None)
+
+    def process_result_value(
+        self, value: datetime | None, dialect: Dialect
+    ) -> datetime | None:
+        """Attach UTC to a stored value.
+
+        Args:
+            value: The value read from the database.
+            dialect: The database dialect.
+
+        Returns:
+            The aware UTC datetime, or ``None``.
+        """
+        return None if value is None else value.replace(tzinfo=UTC)
 
 
 def _configure_connection(

@@ -1,37 +1,16 @@
-from typing import TYPE_CHECKING, Annotated
-
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Request, Response
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from casttrail import get_version
 from casttrail.db import current_revision
 from casttrail.web import WEB_DIR
-
-if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
+from casttrail.web.dependencies import SessionDep
 
 router = APIRouter()
 templates = Jinja2Templates(directory=WEB_DIR / "templates")
-
-
-async def get_session(request: Request) -> AsyncIterator[AsyncSession]:
-    """Provide a database session for the duration of a request.
-
-    Args:
-        request: The current request.
-
-    Yields:
-        An open session.
-    """
-    async with request.app.state.session_factory() as session:
-        yield session
-
-
-SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 
 @router.get("/health")

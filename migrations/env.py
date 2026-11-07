@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 from alembic import context
 
+import casttrail.auth.models  # noqa: F401  (registers the tables on Base.metadata)
 from casttrail.config import Settings
 from casttrail.db import Base, create_engine
 

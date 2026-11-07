@@ -46,3 +46,25 @@ def test_persistence_does_not_depend_on_the_web_framework() -> None:
         .matching("fastapi*")
     )
     assert_passes(rule)
+
+
+def test_auth_does_not_depend_on_the_web_layer_or_web_frameworks() -> None:
+    """`auth` is plain service code; cookies and routes live in `web`."""
+    for upper in ("*web*", "*main.py"):
+        rule = (
+            project_files(SRC_PATH)
+            .in_folder("*auth*")
+            .should_not()
+            .depend_on_files()
+            .in_path(upper)
+        )
+        assert_passes(rule)
+    for framework in ("fastapi*", "starlette*"):
+        framework_rule = (
+            project_files(SRC_PATH)
+            .in_folder("*auth*")
+            .should_not()
+            .depend_on_external_modules()
+            .matching(framework)
+        )
+        assert_passes(framework_rule)

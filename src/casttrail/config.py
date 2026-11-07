@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -9,3 +11,8 @@ class Settings(BaseSettings):
     # The interactive API docs are off unless explicitly enabled.
     docs_enabled: bool = False
     database_url: str = "sqlite+aiosqlite:///data/casttrail.db"
+
+    session_ttl_hours: int = 24 * 30
+    cookie_name: str = "casttrail-session"
+    # "auto" marks the cookie Secure when the request arrived over HTTPS.
+    cookie_secure: Literal["auto", "always", "never"] = "auto"
