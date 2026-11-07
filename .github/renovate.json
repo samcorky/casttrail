@@ -1,0 +1,125 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:best-practices",
+    "group:allNonMajor",
+    "security:openssf-scorecard",
+    "security:minimumReleaseAgePypi"
+  ],
+  "ignorePresets": ["abandonments:recommended"],
+  "timezone": "UTC",
+  "semanticCommits": "enabled",
+  "semanticCommitType": "chore",
+  "semanticCommitScope": "deps",
+  "osvVulnerabilityAlerts": true,
+  "rebaseWhen": "behind-base-branch",
+  "internalChecksFilter": "strict",
+  "schedule": ["before 6am on saturday", "before 6am on sunday"],
+  "gitIgnoredAuthors": ["114827586+autofix-ci[bot]@users.noreply.github.com"],
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 5,
+  "labels": ["dependencies"],
+  "vulnerabilityAlerts": {
+    "labels": ["security", "dependencies"],
+    "schedule": ["at any time"],
+    "automerge": true,
+    "platformAutomerge": true,
+    "semanticCommitType": "fix",
+    "semanticCommitScope": "security",
+    "minimumReleaseAge": null
+  },
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on sunday"],
+    "automerge": true,
+    "platformAutomerge": true
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "The Python floor in requires-python, so it moves with .python-version in one pull request",
+      "managerFilePatterns": ["/^pyproject\\.toml$/"],
+      "matchStrings": ["requires-python = \">=(?<currentValue>3\\.\\d+)\""],
+      "depNameTemplate": "python",
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker"
+    }
+  ],
+  "pre-commit": {
+    "enabled": true
+  },
+  "packageRules": [
+    {
+      "description": "Python interpreter bumps (.python-version and the requires-python floor) go in one pull request and are reviewed by hand",
+      "matchManagers": ["pyenv", "custom.regex"],
+      "matchPackageNames": ["python"],
+      "groupName": "python interpreter version",
+      "commitMessageTopic": "Python interpreter",
+      "automerge": false,
+      "labels": ["python-version"]
+    },
+    {
+      "description": "Python runtime dependencies (project.dependencies)",
+      "matchManagers": ["pep621"],
+      "matchDepTypes": ["project.dependencies"],
+      "groupName": "python runtime dependencies"
+    },
+    {
+      "description": "Python dev tooling (dependency-groups)",
+      "matchManagers": ["pep621"],
+      "matchDepTypes": ["dependency-groups"],
+      "groupName": "python dev dependencies"
+    },
+    {
+      "description": "hatchling, hatch-vcs and calver-scm are pinned in build-system.requires and in a dependency group; keep them in one pull request so they move together",
+      "matchManagers": ["pep621"],
+      "matchPackageNames": ["hatchling", "hatch-vcs", "calver-scm"],
+      "groupName": "python build system",
+      "semanticCommitType": "build"
+    },
+    {
+      "description": "Group GitHub Actions updates and pin SHA digests",
+      "matchManagers": ["github-actions"],
+      "groupName": "github actions",
+      "pinDigests": true,
+      "semanticCommitType": "ci"
+    },
+    {
+      "description": "Automerge GitHub Actions minor, patch and digest updates",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "automerge": true,
+      "platformAutomerge": true
+    },
+    {
+      "description": "Group pre-commit hook updates",
+      "matchManagers": ["pre-commit"],
+      "groupName": "pre-commit hooks"
+    },
+    {
+      "description": "Automerge pre-commit hook minor, patch and digest updates",
+      "matchManagers": ["pre-commit"],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "automerge": true,
+      "platformAutomerge": true
+    },
+    {
+      "description": "Automerge minor and patch dev tooling once CI passes",
+      "matchDepTypes": ["dependency-groups"],
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "automerge": true,
+      "platformAutomerge": true
+    },
+    {
+      "description": "Majors are always reviewed by hand",
+      "matchUpdateTypes": ["major"],
+      "automerge": false,
+      "labels": ["major-update"]
+    },
+    {
+      "description": "Runtime dependencies ship to users and are reviewed by hand",
+      "matchDepTypes": ["project.dependencies"],
+      "automerge": false
+    }
+  ]
+}
