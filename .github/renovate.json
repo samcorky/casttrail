@@ -22,8 +22,7 @@
   "vulnerabilityAlerts": {
     "labels": ["security", "dependencies"],
     "schedule": ["at any time"],
-    "automerge": true,
-    "platformAutomerge": true,
+    "automerge": false,
     "semanticCommitType": "fix",
     "semanticCommitScope": "security",
     "minimumReleaseAge": null
@@ -31,8 +30,7 @@
   "lockFileMaintenance": {
     "enabled": true,
     "schedule": ["before 6am on sunday"],
-    "automerge": true,
-    "platformAutomerge": true
+    "automerge": false
   },
   "customManagers": [
     {
