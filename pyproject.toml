@@ -192,8 +192,8 @@ include_external_packages = true
 # More contracts are added as the packages they govern appear (WP-1.7).
 
 [[tool.importlinter.contracts]]
-name = "Use httpx, not requests"
+name = "Use httpx2 for HTTP, not requests or httpx"
 type = "forbidden"
 source_modules = ["casttrail"]
-forbidden_modules = ["requests"]
+forbidden_modules = ["requests", "httpx"]
 allow_indirect_imports = true

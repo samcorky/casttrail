@@ -23,6 +23,7 @@ All via `uv run poe <task>`:
 
 - Python 3.14, `src/` layout, complete type annotations, Google-style docstrings.
 - `from __future__ import annotations` is banned.
+- HTTP client is `httpx2` (`import httpx2`), as in Menagerist. Do not use `requests` or `httpx`.
 - No live network access in tests. Use saved fixtures.
 - Providers return data and never touch the database. Core owns persistence, identity, matching and notifications.
 - Imported data is untrusted. A missing listing is never a cancellation. Manual identity decisions are never overwritten by a sync.
