@@ -1,3 +1,4 @@
+import asyncio
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -7,6 +8,7 @@ from sqlalchemy import func, select
 from casttrail.auth.models import SignInAttempt
 from casttrail.auth.service import AuthService
 from casttrail.auth.throttle import SignInThrottledError, ThrottlePolicy
+from casttrail.db import Base, create_engine, create_session_factory
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -189,3 +191,41 @@ async def test_stored_keys_are_hashes_not_emails_or_addresses(
     assert len(keys) == 2
     assert all(len(key) == 64 for key in keys)
     assert not any("example" in key or "203" in key for key in keys)
+
+
+async def test_concurrent_attempts_cannot_overshoot_the_failure_limit(
+    database_url: str,
+) -> None:
+    """Each sign-in checks, verifies and records in one write transaction.
+
+    Every transaction begins ``IMMEDIATE``, so a second attempt waits for the first to
+    commit before it counts failures. Without that, a burst could all pass the check
+    and then all record a failure.
+    """
+    engine = create_engine(database_url)
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    factory = create_session_factory(engine)
+    async with factory() as session:
+        await AuthService(session, session_ttl=timedelta(hours=1)).create_user(
+            email="a@example.com", display_name="A", password=PASSWORD
+        )
+
+    async def attempt() -> str:
+        async with factory() as session:
+            service = AuthService(
+                session, session_ttl=timedelta(hours=1), throttle_policy=POLICY
+            )
+            try:
+                result = await service.sign_in("a@example.com", "wrong")
+            except SignInThrottledError:
+                return "throttled"
+            return "refused" if result is None else "signed-in"
+
+    try:
+        outcomes = await asyncio.gather(*(attempt() for _ in range(10)))
+    finally:
+        await engine.dispose()
+
+    assert outcomes.count("refused") == POLICY.max_failures_per_user
+    assert outcomes.count("throttled") == 10 - POLICY.max_failures_per_user

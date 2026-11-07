@@ -119,6 +119,11 @@ class AuthService:
         now = self._now()
         address = normalise_email(email)
         throttle = SignInThrottle(self._session, self._policy, now)
+        # The check, the password verification and the failure record share one
+        # transaction. It begins IMMEDIATE (see casttrail.db), so concurrent attempts
+        # queue up here and each sees the previous one's failure. Without that, a burst
+        # could all pass the check before any of them recorded a failure
+        # (tests/integration/test_signin_throttle.py proves this).
         await throttle.check(address, client_ip)
 
         user = await self._session.scalar(select(User).where(User.email == address))
