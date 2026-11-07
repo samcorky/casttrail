@@ -1,0 +1,63 @@
+name: autofix.ci # needed by autofix.ci to securely identify the workflow
+
+# Runs the pre-commit hooks on the files a pull request changes. Hooks that rewrite
+# files (ruff, line endings) have their fixes pushed as a commit from the autofix.ci
+# app, then every hook is checked once more, so this job fails on anything it could not
+# fix. The type check and tests are separate jobs in ci.yml.
+# autofix.ci never edits files under .github/workflows, so a workflow change has to be
+# formatted by hand.
+on:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  UV_LOCKED: "1"
+
+jobs:
+  autofix:
+    name: "Hooks: prek (autofix)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # A pull request is checked out as a merge commit whose first parent is the base
+          # branch, so HEAD~1..HEAD is exactly the files the pull request changes.
+          fetch-depth: 2
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install
+
+      - name: Install dependencies
+        run: uv run poe sync
+
+      - name: Cache the hook environments
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/prek
+          key: prek-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: Apply hook fixes
+        # A hook that rewrites a file exits non-zero; autofix.ci commits those
+        # rewrites below.
+        run: uv run prek run --last-commit || true
+
+      - name: Push fixes
+        uses: autofix-ci/action@c5b2d67aa2274e7b5a18224e8171550871fc7e4a # v1.3.4
+        with:
+          commit-message: "style: apply hook fixes"
+
+      - name: Check hooks
+        run: uv run prek run --last-commit
