@@ -1,8 +1,8 @@
 # CastTrail — High-Level Design
 
-**Status:** Draft / implementation handoff  
-**Version:** 0.12  
-**Date:** 2026-10-27  
+**Status:** Draft / implementation handoff
+**Version:** 0.12
+**Date:** 2026-10-27
 **Audience:** Developer, reviewers, coding agents
 
 ## Project naming and availability

@@ -76,3 +76,20 @@ jobs:
 
       - name: Run tests with coverage
         run: uv run poe test
+
+  ci-passed:
+    # One stable check for branch protection: succeeds only when every job above does.
+    name: CI passed
+    needs: [static, test]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require every job to succeed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Job results: $RESULTS"
+          for result in $RESULTS; do
+            [ "$result" = "success" ] || exit 1
+          done

@@ -1,6 +1,6 @@
 # CastTrail — Low-Level Design & Implementation Plan
 
-**Version:** 0.8 · **Date:** 2026-10-27 · **Status:** Proposed / ready for implementation review  
+**Version:** 0.8 · **Date:** 2026-10-27 · **Status:** Proposed / ready for implementation review
 **Parent:** [High-Level Design v0.12](./CASTTRAIL_HLD_v0.12.md) · **Audience:** Python developers and coding agents
 
 > **Document contract:** The HLD is authoritative for product intent, user stories, feature scope, ranking philosophy, UI choices and delivery phases. This LLD specifies *how to implement* those decisions. Do not copy HLD prose into code comments or agent plans. Where the documents disagree, raise an ADR before coding rather than silently picking one.
