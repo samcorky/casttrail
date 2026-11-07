@@ -5,7 +5,12 @@ description = "Self-hosted tracker that alerts you when people you follow are an
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
+    "fastapi>=0.162",
+    "granian>=2.8",
+    "httpx2>=2.16",
+    "jinja2>=3.1",
     "pydantic>=2.12",
+    "pydantic-settings>=2.12",
 ]
 
 [dependency-groups]
@@ -51,6 +56,10 @@ verbosity = -1
 [tool.poe.tasks.sync]
 cmd = "uv sync --group dev"
 help = "Install the project and dev tools"
+
+[tool.poe.tasks.serve]
+cmd = "granian --interface asgi --factory --host 127.0.0.1 --port 8000 --workers 1 casttrail.main:create_app"
+help = "Run the app on http://127.0.0.1:8000"
 
 [tool.poe.tasks.hooks]
 cmd = "prek install -f"
