@@ -1,0 +1,199 @@
+[project]
+name = "casttrail"
+dynamic = ["version"]
+description = "Self-hosted tracker that alerts you when people you follow are announced as convention guests."
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "pydantic>=2.12",
+]
+
+[dependency-groups]
+# Just the CalVer CLI, so release workflows can run it from the lockfile.
+release = [
+    "calver-scm[cli]>=1.10.0",
+]
+dev = [
+    { include-group = "release" },
+    "import-linter>=2.0",
+    "mypy>=1.18",
+    "poethepoet>=0.37",
+    "prek>=0.2",
+    "pytest>=8.4",
+    "pytest-asyncio>=1.2",
+    "pytest-cov>=7.0",
+    "ruff>=0.14",
+]
+
+[build-system]
+requires = ["hatchling==1.33.0", "hatch-vcs==0.5.0", "calver-scm==1.10.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.version.raw-options]
+version_scheme = "calver-scm"
+local_scheme = "no-local-version"
+# Used when there is no git history (a fresh clone without tags, an sdist).
+fallback_version = "0.0.0"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/casttrail"]
+
+[tool.calver-scm]
+stable = false
+
+# ---------------------------------------------------------------- tasks
+[tool.poe]
+verbosity = -1
+
+[tool.poe.tasks.sync]
+cmd = "uv sync --group dev"
+help = "Install the project and dev tools"
+
+[tool.poe.tasks.hooks]
+cmd = "prek install -f"
+help = "Install the git hooks"
+
+[tool.poe.tasks.format]
+cmd = "ruff format"
+help = "Format the code"
+
+[tool.poe.tasks.format-check]
+cmd = "ruff format --check"
+help = "Check formatting"
+
+[tool.poe.tasks.lint]
+cmd = "ruff check --no-fix"
+help = "Lint without changing files"
+
+[tool.poe.tasks.lint-fix]
+cmd = "ruff check --fix"
+help = "Lint and apply safe fixes"
+
+[tool.poe.tasks.typecheck]
+cmd = "mypy"
+help = "Strict type check"
+
+[tool.poe.tasks.imports]
+cmd = "lint-imports"
+help = "Check package boundaries"
+
+[tool.poe.tasks.test]
+cmd = "pytest --cov --cov-report=term-missing --cov-fail-under=80"
+help = "Run tests with branch coverage (floor rises to 90 by WP-8)"
+
+[tool.poe.tasks.check]
+sequence = ["format-check", "lint", "typecheck", "imports", "test"]
+help = "Everything CI runs"
+
+# ---------------------------------------------------------------- ruff
+[tool.ruff]
+fix = false
+target-version = "py314"
+line-length = 88
+src = ["src", "tests"]
+extend-exclude = ["docs"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W", "F", "I", "C90", "D", "UP", "B", "C4", "N", "SIM", "TC",
+    "PT", "ANN", "TID", "RUF", "ISC",
+]
+ignore = [
+    # Conflict with the Ruff formatter.
+    "COM812", "COM819", "D206", "D300", "E111", "E114", "E117",
+    "Q000", "Q001", "Q002", "Q003", "Q004", "W191",
+    # Project-specific.
+    "B008", "D100", "D104", "D107", "TC006",
+]
+fixable = ["ALL"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"__future__.annotations".msg = "`from __future__ import annotations` is banned; Python 3.14 evaluates annotations lazily and runtime frameworks need them resolvable."
+
+[tool.ruff.lint.flake8-type-checking]
+runtime-evaluated-base-classes = [
+    "pydantic.BaseModel",
+    "pydantic_settings.BaseSettings",
+    "sqlalchemy.orm.DeclarativeBase",
+]
+runtime-evaluated-decorators = [
+    "dataclasses.dataclass",
+    "pydantic.dataclasses.dataclass",
+    "fastapi.APIRouter.get",
+    "fastapi.APIRouter.post",
+    "fastapi.APIRouter.put",
+    "fastapi.APIRouter.patch",
+    "fastapi.APIRouter.delete",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D", "ANN401", "S101"]
+"migrations/**" = ["D103", "D415", "W291", "TC003"]
+
+[tool.ruff.lint.flake8-implicit-str-concat]
+allow-multiline = false
+
+[tool.ruff.lint.mccabe]
+max-complexity = 8
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.isort]
+known-first-party = ["casttrail"]
+combine-as-imports = true
+split-on-trailing-comma = false
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+# ---------------------------------------------------------------- mypy
+[tool.mypy]
+plugins = ["pydantic.mypy"]
+strict = true
+files = ["src", "tests"]
+mypy_path = "src"
+explicit_package_bases = true
+warn_unused_configs = true
+show_error_codes = true
+pretty = true
+
+# -------------------------------------------------------------- pytest
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+# --cov lives in the poe `test` task so an ad-hoc pytest run never overwrites .coverage.
+markers = [
+    "integration: exercises a real adapter (database, network) rather than an in-memory fake",
+]
+
+[tool.coverage.run]
+source = ["src/casttrail"]
+branch = true
+
+[tool.coverage.report]
+skip_empty = true
+exclude_also = [
+    "if TYPE_CHECKING:",
+    '\.\.\.\s*$',
+    "if __name__ == .__main__.:",
+]
+
+# ------------------------------------------------------ import-linter
+[tool.importlinter]
+root_packages = ["casttrail"]
+include_external_packages = true
+
+# More contracts are added as the packages they govern appear (WP-1.7).
+
+[[tool.importlinter.contracts]]
+name = "Use httpx, not requests"
+type = "forbidden"
+source_modules = ["casttrail"]
+forbidden_modules = ["requests"]
+allow_indirect_imports = true
