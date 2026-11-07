@@ -50,9 +50,6 @@ jobs:
       - name: Type check
         run: uv run poe typecheck
 
-      - name: Check import boundaries
-        run: uv run poe imports
-
   test:
     name: Tests
     runs-on: ubuntu-latest

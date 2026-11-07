@@ -14,8 +14,7 @@ All via `uv run poe <task>`:
 | `format` / `format-check` | Ruff format / verify |
 | `lint` / `lint-fix` | Ruff check / with safe fixes |
 | `typecheck` | `mypy --strict` |
-| `imports` | Import Linter contracts |
-| `test` | pytest with branch coverage |
+| `test` | pytest with branch coverage, including `tests/architecture` (archunitpython layering rules) and the pytest-alembic migration checks |
 | `check` | Everything CI runs. Run it before presenting work. |
 | `hooks` | Install the prek git hooks |
 
