@@ -27,6 +27,7 @@ pytestmark = pytest.mark.integration
 PASSWORD = "correct horse battery"
 ALEMBIC_INI = Path(__file__).parents[2] / "alembic.ini"
 WRONG = "Incorrect email or password."
+SAME_ORIGIN = {"Sec-Fetch-Site": "same-origin"}
 
 
 def _migrate(database_url: str) -> None:
@@ -71,7 +72,9 @@ def web_settings(settings: Settings, database_url: str) -> Settings:
 
 @pytest.fixture
 def client(web_settings: Settings) -> Iterator[TestClient]:
-    with TestClient(_app(web_settings), follow_redirects=False) as test_client:
+    with TestClient(
+        _app(web_settings), follow_redirects=False, headers=SAME_ORIGIN
+    ) as test_client:
         yield test_client
 
 
@@ -116,7 +119,10 @@ def test_the_cookie_is_secure_and_host_prefixed_over_https(
     web_settings: Settings,
 ) -> None:
     with TestClient(
-        _app(web_settings), base_url="https://testserver", follow_redirects=False
+        _app(web_settings),
+        base_url="https://testserver",
+        follow_redirects=False,
+        headers=SAME_ORIGIN,
     ) as client:
         response = client.post(
             "/login", data={"email": "a@example.com", "password": PASSWORD}
@@ -130,7 +136,9 @@ def test_the_cookie_is_secure_and_host_prefixed_over_https(
 
 def test_secure_can_be_forced_on_or_off(web_settings: Settings) -> None:
     always = web_settings.model_copy(update={"cookie_secure": "always"})
-    with TestClient(_app(always), follow_redirects=False) as client:
+    with TestClient(
+        _app(always), follow_redirects=False, headers=SAME_ORIGIN
+    ) as client:
         response = client.post(
             "/login", data={"email": "a@example.com", "password": PASSWORD}
         )
@@ -186,8 +194,12 @@ def test_a_signed_in_user_visiting_login_is_sent_home(client: TestClient) -> Non
 
 def test_two_users_are_signed_in_independently(web_settings: Settings) -> None:
     with (
-        TestClient(_app(web_settings), follow_redirects=False) as one,
-        TestClient(_app(web_settings), follow_redirects=False) as two,
+        TestClient(
+            _app(web_settings), follow_redirects=False, headers=SAME_ORIGIN
+        ) as one,
+        TestClient(
+            _app(web_settings), follow_redirects=False, headers=SAME_ORIGIN
+        ) as two,
     ):
         _sign_in(one, "a@example.com")
         _sign_in(two, "b@example.com")
@@ -199,7 +211,9 @@ def test_two_users_are_signed_in_independently(web_settings: Settings) -> None:
 def test_a_disabled_account_loses_access_immediately(
     web_settings: Settings, database_url: str
 ) -> None:
-    with TestClient(_app(web_settings), follow_redirects=False) as client:
+    with TestClient(
+        _app(web_settings), follow_redirects=False, headers=SAME_ORIGIN
+    ) as client:
         _sign_in(client)
         assert client.get("/whoami").status_code == 200
 
@@ -222,7 +236,9 @@ def test_a_disabled_account_loses_access_immediately(
 def test_an_expired_session_is_refused(
     web_settings: Settings, database_url: str
 ) -> None:
-    with TestClient(_app(web_settings), follow_redirects=False) as client:
+    with TestClient(
+        _app(web_settings), follow_redirects=False, headers=SAME_ORIGIN
+    ) as client:
         _sign_in(client)
 
         async def expire() -> None:

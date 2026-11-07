@@ -1,8 +1,12 @@
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
+from alembic import command
+from alembic.config import Config
 
 import casttrail.auth.models  # noqa: F401
+from casttrail.config import Settings  # noqa: TC001  (pytest resolves fixture types)
 from casttrail.db import Base, create_engine, create_session_factory
 
 if TYPE_CHECKING:
@@ -24,3 +28,12 @@ async def db_session(database_url: str) -> AsyncIterator[AsyncSession]:
     async with create_session_factory(engine)() as session:
         yield session
     await engine.dispose()
+
+
+@pytest.fixture
+def migrated_settings(settings: Settings, database_url: str) -> Settings:
+    """Settings for a database that has had every migration applied."""
+    config = Config(str(Path(__file__).parents[2] / "alembic.ini"))
+    config.set_main_option("sqlalchemy.url", database_url)
+    command.upgrade(config, "head")
+    return settings

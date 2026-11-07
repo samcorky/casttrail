@@ -203,7 +203,8 @@ Revisit these only after WP-8, each as its own slice.
 - [x] 1.2 FastAPI app factory, Jinja2 base, Pico, local assets, health page
 - [x] 1.3 SQLAlchemy async + SQLite (WAL, `BEGIN IMMEDIATE`) and Alembic 🗄️
 - [x] 1.4 `users` + `sessions` tables, argon2 hashing, login and logout, hashed server-side sessions, strict cookies 🗄️ 🧪
-- [ ] 1.5 CSRF by `Sec-Fetch-Site`/`Origin` on unsafe methods (login included), login throttle 🧪
+- [x] 1.5a CSRF by `Sec-Fetch-Site`/`Origin` on every unsafe method, login included (done with 1.4) 🧪
+- [ ] 1.5b Login throttle per username and IP 🧪
 - [ ] 1.6 Admin bootstrap from env, admin user management, private dashboard 👁️ DEMO
 - [ ] 1.7 Extend the architecture tests as packages appear (providers, identity, matching)
 - [ ] ⛔ GATE: two users are isolated, 95% coverage on `auth/`
