@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
+from casttrail.auth.throttle import SignInThrottledError
 from casttrail.web.cookies import (
     clear_session_cookie,
     read_session_token,
@@ -15,6 +16,7 @@ router = APIRouter()
 
 # One message for every refusal, so it never reveals which accounts exist.
 INVALID_CREDENTIALS = "Incorrect email or password."
+THROTTLED = "Too many failed attempts. Try again later."
 
 
 @router.get("/login", response_class=HTMLResponse, response_model=None)
@@ -51,14 +53,24 @@ async def login(
         password: The submitted password.
 
     Returns:
-        A redirect home with the session cookie set, or the form again with a 401.
+        A redirect home with the session cookie set, or the form again with a 401,
+        or a 429 when there have been too many failures.
     """
-    signed_in = await auth.sign_in(
-        email,
-        password,
-        user_agent=request.headers.get("user-agent"),
-        client_ip=request.client.host if request.client else None,
-    )
+    try:
+        signed_in = await auth.sign_in(
+            email,
+            password,
+            user_agent=request.headers.get("user-agent"),
+            client_ip=request.client.host if request.client else None,
+        )
+    except SignInThrottledError as error:
+        return templates.TemplateResponse(
+            request,
+            "login.html",
+            {"error": THROTTLED},
+            status_code=429,
+            headers={"Retry-After": str(int(error.retry_after.total_seconds()))},
+        )
     if signed_in is None:
         return templates.TemplateResponse(
             request, "login.html", {"error": INVALID_CREDENTIALS}, status_code=401

@@ -36,3 +36,13 @@ class AuthSession(Base):
     expires_at: Mapped[datetime] = mapped_column(UtcDateTime)
     user_agent: Mapped[str | None] = mapped_column(String(255))
     client_ip: Mapped[str | None] = mapped_column(String(45))
+
+
+class SignInAttempt(Base):
+    """One failed sign-in. The key is a hash of an email or a client address."""
+
+    __tablename__ = "sign_in_attempts"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    key_hash: Mapped[str] = mapped_column(String(64), index=True)
+    attempted_at: Mapped[datetime] = mapped_column(UtcDateTime)

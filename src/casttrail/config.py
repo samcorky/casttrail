@@ -16,3 +16,8 @@ class Settings(BaseSettings):
     cookie_name: str = "casttrail-session"
     # "auto" marks the cookie Secure when the request arrived over HTTPS.
     cookie_secure: Literal["auto", "always", "never"] = "auto"
+
+    # Failed sign-ins tolerated within the window before further attempts are refused.
+    signin_max_failures_per_user: int = 5
+    signin_max_failures_per_ip: int = 20
+    signin_window_minutes: int = 15

@@ -272,3 +272,42 @@ def test_an_unknown_token_is_refused(client: TestClient) -> None:
     client.cookies.set("casttrail-session", "made-up")
 
     assert client.get("/whoami").status_code == 303
+
+
+def test_repeated_failures_lock_sign_in_with_a_429_and_retry_after(
+    web_settings: Settings,
+) -> None:
+    limits = web_settings.model_copy(update={"signin_max_failures_per_user": 3})
+    with TestClient(
+        _app(limits), follow_redirects=False, headers=SAME_ORIGIN
+    ) as client:
+        for _ in range(3):
+            wrong = client.post(
+                "/login", data={"email": "a@example.com", "password": "nope"}
+            )
+            assert wrong.status_code == 401
+
+        locked = client.post(
+            "/login", data={"email": "a@example.com", "password": PASSWORD}
+        )
+
+        assert locked.status_code == 429
+        assert locked.headers["retry-after"] == str(15 * 60)
+        assert "Too many failed attempts" in locked.text
+        assert "set-cookie" not in locked.headers
+        assert client.get("/whoami").status_code == 303
+
+
+def test_locking_one_account_does_not_lock_another(web_settings: Settings) -> None:
+    limits = web_settings.model_copy(update={"signin_max_failures_per_user": 2})
+    with TestClient(
+        _app(limits), follow_redirects=False, headers=SAME_ORIGIN
+    ) as client:
+        for _ in range(2):
+            client.post("/login", data={"email": "a@example.com", "password": "nope"})
+
+        other = client.post(
+            "/login", data={"email": "b@example.com", "password": PASSWORD}
+        )
+
+        assert other.status_code == 303

@@ -5,6 +5,7 @@ from sqlalchemy import delete, select
 
 from casttrail.auth.models import AuthSession, User
 from casttrail.auth.passwords import DUMMY_HASH, hash_password, verify_password
+from casttrail.auth.throttle import SignInThrottle, ThrottlePolicy
 from casttrail.auth.tokens import hash_token, new_token
 from casttrail.db import utc_now
 
@@ -43,6 +44,7 @@ class AuthService:
         session: AsyncSession,
         *,
         session_ttl: timedelta,
+        throttle_policy: ThrottlePolicy | None = None,
         now: Callable[[], datetime] = utc_now,
     ) -> None:
         """Create the service.
@@ -50,10 +52,12 @@ class AuthService:
         Args:
             session: The database session to work in.
             session_ttl: How long a new session lasts.
+            throttle_policy: Limits on failed sign-ins. Defaults are used if omitted.
             now: The clock, replaceable in tests.
         """
         self._session = session
         self._ttl = session_ttl
+        self._policy = throttle_policy or ThrottlePolicy()
         self._now = now
 
     async def create_user(
@@ -96,7 +100,9 @@ class AuthService:
         """Check credentials and start a session.
 
         An unknown email, a wrong password and a disabled account are
-        indistinguishable to the caller, in both result and timing.
+        indistinguishable to the caller, in both result and timing. Failures are
+        counted per email and per address; once either is over its limit, attempts
+        are refused before the password is even checked.
 
         Args:
             email: The address as typed.
@@ -106,18 +112,29 @@ class AuthService:
 
         Returns:
             The user and session token, or ``None`` if sign-in is refused.
+
+        Raises:
+            SignInThrottledError: If there have been too many recent failures.
         """
-        user = await self._session.scalar(
-            select(User).where(User.email == normalise_email(email))
-        )
+        now = self._now()
+        address = normalise_email(email)
+        throttle = SignInThrottle(self._session, self._policy, now)
+        await throttle.check(address, client_ip)
+
+        user = await self._session.scalar(select(User).where(User.email == address))
         if user is None:
             verify_password(password, DUMMY_HASH)
-            return None
-        if not verify_password(password, user.password_hash) or not user.is_active:
+        if (
+            user is None
+            or not verify_password(password, user.password_hash)
+            or not user.is_active
+        ):
+            await throttle.record_failure(address, client_ip)
+            await self._session.commit()
             return None
 
+        await throttle.clear(address)
         token = new_token()
-        now = self._now()
         self._session.add(
             AuthSession(
                 user_id=user.id,
