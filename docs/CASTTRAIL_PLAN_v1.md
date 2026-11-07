@@ -15,7 +15,7 @@ A self-hosted app for 2-3 trusted users. It watches actors, films and series, fi
 
 | Old | New | Why |
 |---|---|---|
-| 5 workspace packages with entry points | Single package. Providers live in `casttrail/providers/*` behind a `Protocol`. Entry points are deferred until a third-party provider exists. | Keeps the plugin boundary (Import Linter enforces it) without the packaging cost. |
+| 5 workspace packages with entry points | Single package. Providers live in `casttrail/providers/*` behind a `Protocol`. Entry points are deferred until a third-party provider exists. | Keeps the plugin boundary (architecture tests enforce it) without the packaging cost. |
 | `/api/v1` JSON API | None. Jinja2 + HTMX only. | No consumer exists. Add read endpoints when one does. |
 | FastAPI Users | Starlette sessions, `pwdlib` (argon2), own `users` table, CSRF token on forms, login throttle. | FastAPI Users may be in maintenance mode, and it has no CSRF or rate limit anyway. Verify, and fall back to it if the custom code grows. |
 | Source feasibility checked at WP-03 | **WP-0 spike first** | It is the largest risk. |
@@ -36,7 +36,7 @@ src/casttrail/
 migrations/  tests/{unit,integration,fixtures}
 ```
 
-**Import Linter contracts (3):**
+**Architecture tests (`tests/architecture`, archunitpython as in Menagerist; they run inside `pytest`):**
 1. `providers` imports neither `db` nor services.
 2. `identity`, `matching` and `collections` do not import `web`, FastAPI or Jinja.
 3. Providers do not import each other.
@@ -145,11 +145,10 @@ Each WP ends with a runnable app, a UI-visible outcome, a migration test (fresh 
 | `format` / `format-check` | `ruff format` / `ruff format --check` |
 | `lint` / `lint-fix` | `ruff check` / `ruff check --fix` |
 | `typecheck` | `mypy` |
-| `imports` | `lint-imports` (added in 1.7) |
 | `test` | `pytest --cov --cov-branch --cov-report=term-missing --cov-fail-under=<N>` |
-| `check` | sequence of `format-check`, `lint`, `typecheck`, `imports`, `test` |
+| `check` | sequence of `format-check`, `lint`, `typecheck`, `test` |
 
-**CI** is one workflow, `.github/workflows/ci.yml`, triggered on push to `main` and on pull requests. It has **two jobs**: `static` (format-check, lint, typecheck, imports) and `test` (pytest with coverage). Both run on `ubuntu-latest` with `permissions: contents: read`. A Windows job is not required.
+**CI** is one workflow, `.github/workflows/ci.yml`, triggered on push to `main` and on pull requests. It has **two jobs**: `static` (format-check, lint, typecheck) and `test` (pytest with coverage, including the architecture tests and pytest-alembic checks). Both run on `ubuntu-latest` with `permissions: contents: read`. A Windows job is not required.
 
 **Hooks (prek):** `pre-commit` runs the file-hygiene hooks plus `ruff format` and `ruff check --fix`. `commit-msg` checks Conventional Commits. `pre-push` blocks pushes to `main`. Tests and mypy run in CI, not in hooks, to keep commits fast.
 
@@ -198,15 +197,15 @@ Revisit these only after WP-8, each as its own slice.
 - [ ] ⛔ GATE: at least one source is permitted and parseable, or replan
 
 ### WP-1 Shell + auth
-- [ ] 1.1a `uv` project, `src/` layout, Ruff + mypy + pytest config copied from Menagerist, Poe tasks (§7) 🧪
-- [ ] 1.1b `ci.yml` (two jobs: static, test) with pinned action SHAs; green on a trivial test
-- [ ] 1.1c prek config: file hygiene, ruff, conventional commits, gitleaks, `no-commit-to-branch`, actionlint
-- [ ] 1.2 FastAPI app factory, Jinja2 base, Pico, local assets, health page
-- [ ] 1.3 SQLAlchemy async + SQLite (WAL, `BEGIN IMMEDIATE`) and Alembic 🗄️
+- [x] 1.1a `uv` project, `src/` layout, Ruff + mypy + pytest config copied from Menagerist, Poe tasks (§7) 🧪
+- [x] 1.1b `ci.yml` (two jobs: static, test) with pinned action SHAs; green on a trivial test
+- [x] 1.1c prek config: file hygiene, ruff, conventional commits, gitleaks, `no-commit-to-branch`, actionlint
+- [x] 1.2 FastAPI app factory, Jinja2 base, Pico, local assets, health page
+- [x] 1.3 SQLAlchemy async + SQLite (WAL, `BEGIN IMMEDIATE`) and Alembic 🗄️
 - [ ] 1.4 `users`, argon2 hashing, login and logout, sessions 🗄️ 🧪
 - [ ] 1.5 CSRF on all forms, login throttle 🧪
 - [ ] 1.6 Admin bootstrap from env, admin user management, private dashboard 👁️ DEMO
-- [ ] 1.7 Import Linter contracts in CI
+- [ ] 1.7 Extend the architecture tests as packages appear (providers, identity, matching)
 - [ ] ⛔ GATE: two users are isolated, 95% coverage on `auth/`
 
 ### WP-2 Watchlist

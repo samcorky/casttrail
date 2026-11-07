@@ -26,3 +26,6 @@ coverage.xml
 .agent-logs/
 .worktrees/
 CLAUDE.md
+
+# Local data
+data/

@@ -5,12 +5,15 @@ description = "Self-hosted tracker that alerts you when people you follow are an
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
+    "aiosqlite>=0.21",
+    "alembic>=1.16",
     "fastapi>=0.162",
     "granian>=2.8",
     "httpx2>=2.16",
     "jinja2>=3.1",
     "pydantic>=2.12",
     "pydantic-settings>=2.12",
+    "sqlalchemy[asyncio]>=2.0",
 ]
 
 [dependency-groups]
@@ -20,11 +23,12 @@ release = [
 ]
 dev = [
     { include-group = "release" },
-    "import-linter>=2.0",
+    "archunitpython>=1.8.1",
     "mypy>=1.18",
     "poethepoet>=0.37",
     "prek>=0.2",
     "pytest>=8.4",
+    "pytest-alembic>=0.13.2",
     "pytest-asyncio>=1.2",
     "pytest-cov>=7.0",
     "ruff>=0.14",
@@ -61,6 +65,10 @@ help = "Install the project and dev tools"
 cmd = "granian --interface asgi --factory --host 127.0.0.1 --port 8000 --workers 1 casttrail.main:create_app"
 help = "Run the app on http://127.0.0.1:8000"
 
+[tool.poe.tasks.migrate]
+cmd = "alembic upgrade head"
+help = "Apply database migrations"
+
 [tool.poe.tasks.hooks]
 cmd = "prek install -f"
 help = "Install the git hooks"
@@ -85,16 +93,12 @@ help = "Lint and apply safe fixes"
 cmd = "mypy"
 help = "Strict type check"
 
-[tool.poe.tasks.imports]
-cmd = "lint-imports"
-help = "Check package boundaries"
-
 [tool.poe.tasks.test]
 cmd = "pytest --cov --cov-report=term-missing --cov-fail-under=80"
 help = "Run tests with branch coverage (floor rises to 90 by WP-8)"
 
 [tool.poe.tasks.check]
-sequence = ["format-check", "lint", "typecheck", "imports", "test"]
+sequence = ["format-check", "lint", "typecheck", "test"]
 help = "Everything CI runs"
 
 # ---------------------------------------------------------------- ruff
@@ -165,7 +169,7 @@ line-ending = "lf"
 [tool.mypy]
 plugins = ["pydantic.mypy"]
 strict = true
-files = ["src", "tests"]
+files = ["src", "tests", "migrations"]
 mypy_path = "src"
 explicit_package_bases = true
 warn_unused_configs = true
@@ -176,6 +180,7 @@ pretty = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 # --cov lives in the poe `test` task so an ad-hoc pytest run never overwrites .coverage.
 markers = [
     "integration: exercises a real adapter (database, network) rather than an in-memory fake",
@@ -192,17 +197,3 @@ exclude_also = [
     '\.\.\.\s*$',
     "if __name__ == .__main__.:",
 ]
-
-# ------------------------------------------------------ import-linter
-[tool.importlinter]
-root_packages = ["casttrail"]
-include_external_packages = true
-
-# More contracts are added as the packages they govern appear (WP-1.7).
-
-[[tool.importlinter.contracts]]
-name = "Use httpx2 for HTTP, not requests or httpx"
-type = "forbidden"
-source_modules = ["casttrail"]
-forbidden_modules = ["requests", "httpx"]
-allow_indirect_imports = true

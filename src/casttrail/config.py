@@ -8,3 +8,4 @@ class Settings(BaseSettings):
 
     # The interactive API docs are off unless explicitly enabled.
     docs_enabled: bool = False
+    database_url: str = "sqlite+aiosqlite:///data/casttrail.db"
