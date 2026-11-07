@@ -1,16 +1,23 @@
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import RedirectResponse
 
 from casttrail import get_version
 from casttrail.config import Settings
 from casttrail.db import create_engine, create_session_factory
 from casttrail.web import static_files
+from casttrail.web.auth_routes import router as auth_router
+from casttrail.web.dependencies import LoginRequiredError
 from casttrail.web.routes import router
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
+
+
+async def _redirect_to_login(_request: Request, _exc: Exception) -> RedirectResponse:
+    return RedirectResponse("/login", status_code=303)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -41,6 +48,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         openapi_url="/openapi.json" if settings.docs_enabled else None,
         lifespan=lifespan,
     )
+    app.state.settings = settings
+    app.add_exception_handler(LoginRequiredError, _redirect_to_login)
     app.mount("/static", static_files(), name="static")
     app.include_router(router)
+    app.include_router(auth_router)
     return app

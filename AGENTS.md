@@ -15,6 +15,7 @@ All via `uv run poe <task>`:
 | `lint` / `lint-fix` | Ruff check / with safe fixes |
 | `typecheck` | `mypy --strict` |
 | `test` | pytest with branch coverage, including `tests/architecture` (archunitpython layering rules) and the pytest-alembic migration checks |
+| `coverage-critical` | 95% coverage floor for `auth/` (run after `test`) |
 | `check` | Everything CI runs. Run it before presenting work. |
 | `hooks` | Install the prek git hooks |
 

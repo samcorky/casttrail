@@ -11,8 +11,10 @@ dependencies = [
     "granian>=2.8",
     "httpx2>=2.16",
     "jinja2>=3.1",
+    "pwdlib[argon2]>=0.2",
     "pydantic>=2.12",
     "pydantic-settings>=2.12",
+    "python-multipart>=0.0.20",
     "sqlalchemy[asyncio]>=2.0",
 ]
 
@@ -97,8 +99,12 @@ help = "Strict type check"
 cmd = "pytest --cov --cov-report=term-missing --cov-fail-under=80"
 help = "Run tests with branch coverage (floor rises to 90 by WP-8)"
 
+[tool.poe.tasks.coverage-critical]
+cmd = "coverage report --include=src/casttrail/auth/* --fail-under=95"
+help = "Stricter coverage floor for security-critical code (needs a prior `poe test`)"
+
 [tool.poe.tasks.check]
-sequence = ["format-check", "lint", "typecheck", "test"]
+sequence = ["format-check", "lint", "typecheck", "test", "coverage-critical"]
 help = "Everything CI runs"
 
 # ---------------------------------------------------------------- ruff
@@ -131,6 +137,7 @@ runtime-evaluated-base-classes = [
     "pydantic.BaseModel",
     "pydantic_settings.BaseSettings",
     "sqlalchemy.orm.DeclarativeBase",
+    "casttrail.db.Base",
 ]
 runtime-evaluated-decorators = [
     "dataclasses.dataclass",

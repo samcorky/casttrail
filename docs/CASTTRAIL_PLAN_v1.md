@@ -17,7 +17,7 @@ A self-hosted app for 2-3 trusted users. It watches actors, films and series, fi
 |---|---|---|
 | 5 workspace packages with entry points | Single package. Providers live in `casttrail/providers/*` behind a `Protocol`. Entry points are deferred until a third-party provider exists. | Keeps the plugin boundary (architecture tests enforce it) without the packaging cost. |
 | `/api/v1` JSON API | None. Jinja2 + HTMX only. | No consumer exists. Add read endpoints when one does. |
-| FastAPI Users | Starlette sessions, `pwdlib` (argon2), own `users` table, CSRF token on forms, login throttle. | FastAPI Users may be in maintenance mode, and it has no CSRF or rate limit anyway. Verify, and fall back to it if the custom code grows. |
+| FastAPI Users | `pwdlib` (argon2), own `users` and `sessions` tables, opaque session token (only its SHA-256 stored), cookie `HttpOnly`, `SameSite=Lax`, `__Host-Http-` prefix when Secure, one strict cookie reader. CSRF by `Sec-Fetch-Site`/`Origin` check on unsafe methods (as Menagerist), no form tokens. Login throttle per username and IP. | FastAPI Users may be in maintenance mode, and it has no CSRF or rate limit anyway. Verify, and fall back to it if the custom code grows. |
 | Source feasibility checked at WP-03 | **WP-0 spike first** | It is the largest risk. |
 | 95% coverage in 6 areas plus a ported checker | Menagerist's Ruff/mypy/pytest/prek/CI patterns, trimmed (§7). Overall coverage floor rising 80% to 90%, 95% only for auth, identity, matching and signer rules via `coverage report --include`. No custom script. | Same safety where bugs are costly, less ceremony. |
 | Separate HLD, LLD, ADRs, handoffs | This doc, plus a short `docs/decisions.md` log. | Docs were drifting out of sync. |
@@ -202,8 +202,8 @@ Revisit these only after WP-8, each as its own slice.
 - [x] 1.1c prek config: file hygiene, ruff, conventional commits, gitleaks, `no-commit-to-branch`, actionlint
 - [x] 1.2 FastAPI app factory, Jinja2 base, Pico, local assets, health page
 - [x] 1.3 SQLAlchemy async + SQLite (WAL, `BEGIN IMMEDIATE`) and Alembic 🗄️
-- [ ] 1.4 `users`, argon2 hashing, login and logout, sessions 🗄️ 🧪
-- [ ] 1.5 CSRF on all forms, login throttle 🧪
+- [x] 1.4 `users` + `sessions` tables, argon2 hashing, login and logout, hashed server-side sessions, strict cookies 🗄️ 🧪
+- [ ] 1.5 CSRF by `Sec-Fetch-Site`/`Origin` on unsafe methods (login included), login throttle 🧪
 - [ ] 1.6 Admin bootstrap from env, admin user management, private dashboard 👁️ DEMO
 - [ ] 1.7 Extend the architecture tests as packages appear (providers, identity, matching)
 - [ ] ⛔ GATE: two users are isolated, 95% coverage on `auth/`
