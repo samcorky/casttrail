@@ -33,7 +33,9 @@ All via `uv run poe <task>`:
 
 ## Git
 
-- Work on a branch and open a pull request. `main` is protected.
+- Never commit to `main`. One branch and one pull request per plan chunk (e.g. `feat/1-2-app-shell`, `fix/...`, `chore/...`).
+- The PR title is a Conventional Commit. PRs are squash-merged and the branch is deleted on merge.
+- A PR merges only when `Static checks` and `Tests` pass and the branch is up to date with `main`.
 - Commit messages follow Conventional Commits (`feat`, `fix`, `docs`, `ci`, `test`, `build`, `chore`, `refactor`).
 - Do not commit or push unless asked.
 - Do not add tool or assistant attribution to commits, pull requests, code or docs.
