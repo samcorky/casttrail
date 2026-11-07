@@ -1,7 +1,8 @@
 from dataclasses import dataclass, field
+from datetime import timedelta
 from typing import TYPE_CHECKING
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 
 from casttrail.auth.models import AuthSession, User
 from casttrail.auth.passwords import DUMMY_HASH, hash_password, verify_password
@@ -11,9 +12,12 @@ from casttrail.db import utc_now
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from datetime import datetime, timedelta
+    from datetime import datetime
 
     from sqlalchemy.ext.asyncio import AsyncSession
+
+# How long a session row, even an ended or expired one, remembers its client address.
+KNOWN_ADDRESS_RETENTION = timedelta(days=90)
 
 
 def normalise_email(email: str) -> str:
@@ -124,9 +128,15 @@ class AuthService:
         # queue up here and each sees the previous one's failure. Without that, a burst
         # could all pass the check before any of them recorded a failure
         # (tests/integration/test_signin_throttle.py proves this).
-        await throttle.check(address, client_ip)
-
         user = await self._session.scalar(select(User).where(User.email == address))
+        # An address this user has signed in from before is not locked out of their
+        # own account by someone else's failed guesses; the per-address limit still
+        # applies to it. It only ever matches the real user, so it reveals nothing.
+        known_address = user is not None and await self._is_known_address(
+            user, client_ip
+        )
+        await throttle.check(address, client_ip, exempt_user_limit=known_address)
+
         if user is None:
             verify_password(password, DUMMY_HASH)
         if (
@@ -139,6 +149,11 @@ class AuthService:
             return None
 
         await throttle.clear(address)
+        await self._session.execute(
+            delete(AuthSession).where(
+                AuthSession.expires_at < now - KNOWN_ADDRESS_RETENTION
+            )
+        )
         token = new_token()
         self._session.add(
             AuthSession(
@@ -177,10 +192,28 @@ class AuthService:
     async def sign_out(self, token: str) -> None:
         """End the session a token belongs to.
 
+        The row is expired rather than deleted, so the address stays known to the
+        sign-in throttle for ``KNOWN_ADDRESS_RETENTION``.
+
         Args:
             token: The secret token from the cookie.
         """
         await self._session.execute(
-            delete(AuthSession).where(AuthSession.token_hash == hash_token(token))
+            update(AuthSession)
+            .where(
+                AuthSession.token_hash == hash_token(token),
+                AuthSession.expires_at > self._now(),
+            )
+            .values(expires_at=self._now())
         )
         await self._session.commit()
+
+    async def _is_known_address(self, user: User, client_ip: str | None) -> bool:
+        if client_ip is None:
+            return False
+        found = await self._session.scalar(
+            select(AuthSession.id)
+            .where(AuthSession.user_id == user.id, AuthSession.client_ip == client_ip)
+            .limit(1)
+        )
+        return found is not None

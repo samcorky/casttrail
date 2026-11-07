@@ -229,3 +229,94 @@ async def test_concurrent_attempts_cannot_overshoot_the_failure_limit(
 
     assert outcomes.count("refused") == POLICY.max_failures_per_user
     assert outcomes.count("throttled") == 10 - POLICY.max_failures_per_user
+
+
+HOME = "203.0.113.10"
+ATTACKER = "198.51.100.66"
+
+
+async def _lock_out_from_elsewhere(auth: AuthService) -> None:
+    for _ in range(3):
+        assert await auth.sign_in("a@example.com", "wrong", client_ip=ATTACKER) is None
+    with pytest.raises(SignInThrottledError):
+        await auth.sign_in("a@example.com", PASSWORD, client_ip=ATTACKER)
+
+
+async def test_a_known_address_is_not_locked_out_by_guesses_from_elsewhere(
+    auth: AuthService,
+) -> None:
+    assert await auth.sign_in("a@example.com", PASSWORD, client_ip=HOME) is not None
+
+    await _lock_out_from_elsewhere(auth)
+
+    assert await auth.sign_in("a@example.com", PASSWORD, client_ip=HOME) is not None
+
+
+async def test_an_unknown_address_is_still_locked_out(auth: AuthService) -> None:
+    await auth.sign_in("a@example.com", PASSWORD, client_ip=HOME)
+    await _lock_out_from_elsewhere(auth)
+
+    with pytest.raises(SignInThrottledError):
+        await auth.sign_in("a@example.com", PASSWORD, client_ip="192.0.2.77")
+    with pytest.raises(SignInThrottledError):
+        await auth.sign_in("a@example.com", PASSWORD, client_ip=None)
+
+
+async def test_a_known_address_is_still_limited_per_address(
+    auth: AuthService,
+) -> None:
+    await auth.sign_in("a@example.com", PASSWORD, client_ip=HOME)
+    for number in range(5):
+        await auth.sign_in(f"guess{number}@example.com", "wrong", client_ip=HOME)
+
+    with pytest.raises(SignInThrottledError):
+        await auth.sign_in("a@example.com", PASSWORD, client_ip=HOME)
+
+
+async def test_an_address_known_to_one_user_is_not_known_for_another(
+    auth: AuthService,
+) -> None:
+    await auth.create_user(email="b@example.com", display_name="B", password=PASSWORD)
+    await auth.sign_in("a@example.com", PASSWORD, client_ip=HOME)
+    for _ in range(3):
+        await auth.sign_in("b@example.com", "wrong", client_ip=ATTACKER)
+
+    with pytest.raises(SignInThrottledError):
+        await auth.sign_in("b@example.com", PASSWORD, client_ip=HOME)
+
+
+async def test_signing_out_keeps_the_address_known(auth: AuthService) -> None:
+    first = await auth.sign_in("a@example.com", PASSWORD, client_ip=HOME)
+    assert first is not None
+    await auth.sign_out(first.token)
+    assert await auth.authenticate(first.token) is None
+
+    await _lock_out_from_elsewhere(auth)
+
+    assert await auth.sign_in("a@example.com", PASSWORD, client_ip=HOME) is not None
+
+
+async def test_an_address_is_forgotten_after_the_retention_period(
+    auth: AuthService, clock: Clock
+) -> None:
+    await auth.sign_in("a@example.com", PASSWORD, client_ip=HOME)
+    await _lock_out_from_elsewhere(auth)
+
+    clock.current = START + timedelta(days=200)
+    await auth.create_user(email="c@example.com", display_name="C", password=PASSWORD)
+    assert await auth.sign_in("c@example.com", PASSWORD) is not None  # runs the prune
+    for _ in range(3):
+        await auth.sign_in("a@example.com", "wrong", client_ip=ATTACKER)
+
+    with pytest.raises(SignInThrottledError):
+        await auth.sign_in("a@example.com", PASSWORD, client_ip=HOME)
+
+
+async def test_signing_out_twice_is_harmless(auth: AuthService) -> None:
+    signed_in = await auth.sign_in("a@example.com", PASSWORD)
+    assert signed_in is not None
+
+    await auth.sign_out(signed_in.token)
+    await auth.sign_out(signed_in.token)
+
+    assert await auth.authenticate(signed_in.token) is None

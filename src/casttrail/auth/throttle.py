@@ -79,12 +79,20 @@ class SignInThrottle:
         )
         return count or 0
 
-    async def check(self, email: str, client_ip: str | None) -> None:
+    async def check(
+        self,
+        email: str,
+        client_ip: str | None,
+        *,
+        exempt_user_limit: bool = False,
+    ) -> None:
         """Refuse the attempt if either counter is over its limit.
 
         Args:
             email: The normalised email being tried.
             client_ip: The client address, if known.
+            exempt_user_limit: Skip the per-email limit, for an address the account
+                has signed in from before. The per-address limit still applies.
 
         Raises:
             SignInThrottledError: If the email or the address has too many recent
@@ -96,7 +104,9 @@ class SignInThrottle:
             )
         )
         over_user = (
-            await self._failures(_user_key(email)) >= self._policy.max_failures_per_user
+            not exempt_user_limit
+            and await self._failures(_user_key(email))
+            >= self._policy.max_failures_per_user
         )
         over_ip = (
             client_ip is not None
