@@ -24,7 +24,7 @@ A self-hosted app for 2-3 trusted users. It watches actors, films and series, fi
 
 ## 3. Architecture
 
-One FastAPI app, one SQLite file in WAL mode, one worker, in-process APScheduler (pin 3.x). Write transactions use `BEGIN IMMEDIATE` to avoid `SQLITE_BUSY` on lock upgrades. Network calls never run inside a transaction.
+HTTP client: `httpx2` (added with the first provider, WP-2). One FastAPI app, one SQLite file in WAL mode, one worker, in-process APScheduler (pin 3.x). Write transactions use `BEGIN IMMEDIATE` to avoid `SQLITE_BUSY` on lock upgrades. Network calls never run inside a transaction.
 
 ```
 src/casttrail/
