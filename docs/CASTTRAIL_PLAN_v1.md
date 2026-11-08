@@ -216,7 +216,7 @@ Revisit these only after WP-8, each as its own slice.
 - [x] ⛔ GATE: two users are isolated, 95% coverage on `auth/` (185 tests, `auth/` at 100%)
 
 ### WP-2 Watchlist
-- [ ] 2.1 TMDB provider with fixtures, `Protocol` in `providers/base.py` 🧪
+- [x] 2.1 TMDB provider with fixtures, `Protocol` in `providers/base.py` 🧪
 - [ ] 2.2 `people`, `productions`, `credits`, `external_identities` 🗄️
 - [ ] 2.3 Search UI (HTMX) for people, films and series
 - [ ] 2.4 `watches` + watch and unwatch, per-user isolation 🗄️ 🧪
