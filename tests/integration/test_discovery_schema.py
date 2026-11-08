@@ -12,6 +12,7 @@ from casttrail.discovery.models import (
     AppearanceSource,
     Convention,
     ConventionSource,
+    JobRun,
     SourceObservation,
 )
 from casttrail.identity.models import ExternalIdentity
@@ -442,3 +443,60 @@ async def test_deleting_an_appearance_removes_its_source_lines(
     await db_session.commit()
 
     assert await db_session.scalar(select(AppearanceSource)) is None
+
+
+# --- job runs -------------------------------------------------------------------
+
+
+def _run(job: str = "refresh", status: str = "running") -> JobRun:
+    return JobRun(job=job, status=status, started_at=datetime(2026, 11, 8, tzinfo=UTC))
+
+
+async def test_a_job_run_starts_running_and_unfinished(
+    db_session: AsyncSession,
+) -> None:
+    db_session.add(JobRun(job="refresh"))
+    await db_session.commit()
+
+    stored = await db_session.scalar(select(JobRun))
+    assert stored is not None
+    assert (stored.status, stored.finished_at, stored.summary) == (
+        "running",
+        None,
+        None,
+    )
+    assert stored.started_at.tzinfo is not None
+
+
+async def test_only_one_run_of_a_job_can_be_running(db_session: AsyncSession) -> None:
+    db_session.add(_run())
+    await db_session.commit()
+
+    db_session.add(_run())
+    with pytest.raises(IntegrityError):
+        await db_session.commit()
+
+
+async def test_finished_runs_and_other_jobs_do_not_block_a_running_one(
+    db_session: AsyncSession,
+) -> None:
+    db_session.add_all(
+        [
+            _run(status="succeeded"),
+            _run(status="failed"),
+            _run(status="running"),
+            _run(job="other", status="running"),
+        ]
+    )
+
+    await db_session.commit()
+
+
+@pytest.mark.parametrize("status", ["", "paused", "Running"])
+async def test_a_job_run_refuses_an_unknown_status(
+    db_session: AsyncSession, status: str
+) -> None:
+    db_session.add(_run(status=status))
+
+    with pytest.raises(IntegrityError):
+        await db_session.commit()

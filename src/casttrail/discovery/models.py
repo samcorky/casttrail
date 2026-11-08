@@ -1,7 +1,14 @@
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import CheckConstraint, ForeignKey, Index, String, UniqueConstraint
+from sqlalchemy import (
+    CheckConstraint,
+    ForeignKey,
+    Index,
+    String,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from casttrail.db import Base, UtcDateTime, utc_now
@@ -134,3 +141,32 @@ class AppearanceSource(Base):
     status: Mapped[str | None] = mapped_column(String(10))
     first_seen_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utc_now)
     last_seen_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utc_now)
+
+
+class JobRun(Base):
+    """One run of a background job, and the lock that stops two running at once.
+
+    At most one row per job can be ``running``: the database refuses a second, so the
+    lock holds across processes. A run that is still ``running`` long after it began
+    is taken to have died and is replaced.
+    """
+
+    __tablename__ = "job_runs"
+    __table_args__ = (
+        CheckConstraint("status IN ('running', 'succeeded', 'failed')", name="status"),
+        Index(
+            "uq_job_runs_one_running",
+            "job",
+            unique=True,
+            sqlite_where=text("status = 'running'"),
+        ),
+        Index("ix_job_runs_job_started", "job", "started_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    job: Mapped[str] = mapped_column(String(50))
+    status: Mapped[str] = mapped_column(String(10), default="running")
+    started_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utc_now)
+    finished_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+    # What the run did, as JSON of counts. Never holds credentials or page text.
+    summary: Mapped[str | None] = mapped_column(String(2000))

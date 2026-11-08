@@ -34,7 +34,7 @@ def _revisions(database_url: str) -> list[str]:
 def test_upgrade_on_an_empty_database_reaches_head(database_url: str) -> None:
     command.upgrade(_config(database_url), "head")
 
-    assert _revisions(database_url) == ["0008"]
+    assert _revisions(database_url) == ["0009"]
 
 
 def test_upgrade_is_repeatable(database_url: str) -> None:
@@ -43,7 +43,7 @@ def test_upgrade_is_repeatable(database_url: str) -> None:
     command.upgrade(config, "head")
     command.upgrade(config, "head")
 
-    assert _revisions(database_url) == ["0008"]
+    assert _revisions(database_url) == ["0009"]
 
 
 def test_status_page_shows_the_applied_revision(
@@ -52,7 +52,7 @@ def test_status_page_shows_the_applied_revision(
     command.upgrade(_config(database_url), "head")
 
     with TestClient(create_app(Settings(database_url=database_url))) as client:
-        assert "Database revision 0008" in client.get("/status").text
+        assert "Database revision 0009" in client.get("/status").text
 
 
 def _connect(database_url: str) -> sqlite3.Connection:
@@ -94,7 +94,7 @@ def test_upgrading_from_the_previous_revision_keeps_existing_data(
             ("a@example.com",)
         ]
         assert _table_names(connection) >= NEW_TABLES
-    assert _revisions(database_url) == ["0008"]
+    assert _revisions(database_url) == ["0009"]
 
 
 def test_the_migrated_schema_enforces_its_constraints(database_url: str) -> None:
@@ -181,7 +181,7 @@ def test_upgrading_from_watches_keeps_existing_data(database_url: str) -> None:
             "SELECT external_id FROM external_identities"
         ).fetchall() == [("alice-en",)]
         assert _table_names(connection) >= DISCOVERY_TABLES
-    assert _revisions(database_url) == ["0008"]
+    assert _revisions(database_url) == ["0009"]
 
 
 def test_the_migrated_discovery_schema_enforces_its_constraints(
@@ -283,7 +283,7 @@ def test_upgrading_from_discovery_tables_keeps_identities_and_adds_a_name(
             """
         ).fetchall()
     assert rows == [("1", "p1", None), ("bob-en", None, None)]
-    assert _revisions(database_url) == ["0008"]
+    assert _revisions(database_url) == ["0009"]
 
 
 def test_the_migrated_name_column_takes_a_name_and_may_stay_empty(
@@ -328,3 +328,26 @@ def test_downgrading_from_the_name_column_keeps_the_identities(
             "SELECT external_id FROM external_identities"
         ).fetchall() == [("a",)]
     assert _revisions(database_url) == ["0007"]
+
+
+def test_the_migrated_job_runs_table_allows_one_running_row_per_job(
+    database_url: str,
+) -> None:
+    command.upgrade(_config(database_url), "head")
+    insert = (
+        f"INSERT INTO job_runs (id, job, status, started_at) VALUES (?, ?, ?, {NOW})"
+    )
+    with closing(_connect(database_url)) as connection:
+        connection.execute(insert, ("1", "refresh", "running"))
+        # A finished run, and a running run of another job, do not count.
+        connection.execute(insert, ("2", "refresh", "failed"))
+        connection.execute(insert, ("3", "refresh", "succeeded"))
+        connection.execute(insert, ("4", "other", "running"))
+
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(insert, ("5", "refresh", "running"))
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(insert, ("6", "refresh", "paused"))
+
+        connection.execute("UPDATE job_runs SET status = 'failed' WHERE id = '1'")
+        connection.execute(insert, ("7", "refresh", "running"))
