@@ -3,9 +3,16 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 
+from casttrail.auth.errors import AccountError
 from casttrail.auth.models import AuthSession, KnownDevice, User
-from casttrail.auth.passwords import DUMMY_HASH, hash_password, verify_password
+from casttrail.auth.passwords import (
+    DUMMY_HASH,
+    check_new_password,
+    hash_password,
+    verify_password,
+)
 from casttrail.auth.throttle import SignInThrottle, ThrottlePolicy
 from casttrail.auth.tokens import hash_token, new_token
 from casttrail.db import utc_now
@@ -15,6 +22,9 @@ if TYPE_CHECKING:
     from datetime import datetime, timedelta
 
     from sqlalchemy.ext.asyncio import AsyncSession
+
+MAX_EMAIL_LENGTH = 320
+MAX_NAME_LENGTH = 100
 
 # Looked up when the email is unknown, so an unknown email runs the same queries as a
 # real one and cannot be told apart by what the server does.
@@ -85,15 +95,33 @@ class AuthService:
 
         Returns:
             The stored user.
+
+        Raises:
+            AccountError: If the email, name or password is not acceptable, or the
+                email is already in use.
         """
+        address = normalise_email(email)
+        name = display_name.strip()
+        if "@" not in address or len(address) > MAX_EMAIL_LENGTH:
+            msg = "Enter a valid email address."
+            raise AccountError(msg)
+        if not name or len(name) > MAX_NAME_LENGTH:
+            msg = f"The name must be 1 to {MAX_NAME_LENGTH} characters."
+            raise AccountError(msg)
+        check_new_password(password)
         user = User(
-            email=normalise_email(email),
-            display_name=display_name.strip(),
+            email=address,
+            display_name=name,
             password_hash=hash_password(password),
             is_admin=is_admin,
         )
         self._session.add(user)
-        await self._session.commit()
+        try:
+            await self._session.commit()
+        except IntegrityError as error:
+            await self._session.rollback()
+            msg = "That email address is already in use."
+            raise AccountError(msg) from error
         return user
 
     async def sign_in(

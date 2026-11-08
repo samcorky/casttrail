@@ -1,9 +1,10 @@
 from datetime import timedelta
 from typing import TYPE_CHECKING, Annotated
 
-from fastapi import Depends, Request
+from fastapi import Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from casttrail.auth.admin import AdminService
 from casttrail.auth.models import User
 from casttrail.auth.service import AuthService
 from casttrail.auth.throttle import ThrottlePolicy
@@ -115,3 +116,38 @@ async def require_user(user: CurrentUserOptional) -> User:
 
 
 CurrentUser = Annotated[User, Depends(require_user)]
+
+
+async def require_admin(user: CurrentUser) -> User:
+    """Return the signed-in administrator, or pretend the page does not exist.
+
+    Args:
+        user: The signed-in user.
+
+    Returns:
+        The user, who is an administrator.
+
+    Raises:
+        HTTPException: A 404 if the user is not an administrator.
+    """
+    if not user.is_admin:
+        raise HTTPException(status_code=404)
+    return user
+
+
+CurrentAdmin = Annotated[User, Depends(require_admin)]
+
+
+def get_admin_service(session: SessionDep) -> AdminService:
+    """Build the admin service for a request.
+
+    Args:
+        session: The request's database session.
+
+    Returns:
+        An admin service bound to the session.
+    """
+    return AdminService(session)
+
+
+AdminServiceDep = Annotated[AdminService, Depends(get_admin_service)]

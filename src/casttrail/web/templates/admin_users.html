@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Users · CastTrail{% endblock %}
+{% block content %}
+<h1>Users</h1>
+{% if error %}
+<p role="alert"><strong>{{ error }}</strong></p>
+{% endif %}
+<table>
+  <thead>
+    <tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr>
+  </thead>
+  <tbody>
+    {% for u in users %}
+    <tr>
+      <td>{{ u.display_name }}</td>
+      <td>{{ u.email }}</td>
+      <td>{{ "Admin" if u.is_admin else "User" }}</td>
+      <td>{{ "Active" if u.is_active else "Disabled" }}</td>
+      <td>
+        {% if u.is_active %}
+          {% if u.id != admin.id %}
+          <form method="post" action="/admin/users/{{ u.id }}/disable">
+            <button type="submit" class="secondary">Disable</button>
+          </form>
+          {% endif %}
+        {% else %}
+        <form method="post" action="/admin/users/{{ u.id }}/enable">
+          <button type="submit">Enable</button>
+        </form>
+        {% endif %}
+        {% if not u.is_admin %}
+        <form method="post" action="/admin/users/{{ u.id }}/make-admin">
+          <button type="submit" class="outline">Make admin</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<article>
+  <h2>Add a user</h2>
+  <form method="post" action="/admin/users">
+    <label for="display_name">Name</label>
+    <input id="display_name" name="display_name" type="text" maxlength="100" required value="{{ form.get('display_name', '') }}">
+    <label for="email">Email</label>
+    <input id="email" name="email" type="email" autocomplete="off" required value="{{ form.get('email', '') }}">
+    <label for="password">Initial password</label>
+    <input id="password" name="password" type="password" autocomplete="new-password" minlength="12" required aria-describedby="password-help">
+    <small id="password-help">At least 12 characters. Tell the user to change it after signing in.</small>
+    <button type="submit">Add user</button>
+  </form>
+</article>
+{% endblock %}
