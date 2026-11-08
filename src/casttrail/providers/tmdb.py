@@ -16,6 +16,7 @@ from casttrail.providers.base import (
 )
 
 BASE_URL = "https://api.themoviedb.org/3"
+IMAGE_BASE_URL = "https://image.tmdb.org/t/p"
 
 
 def create_client(

@@ -92,3 +92,15 @@ Migration 0005 adds `people`, `productions`, `credits` and `external_identities`
 - **No `normalised_name` column yet.** Name matching is WP-4; adding it then needs a migration anyway and a backfill is trivial on a table this small.
 
 Other choices: a person has at most one credit per production (the writer picks the character), credits and identities cascade or unlink as described in the models, and `productions.media_type` is guarded by a CHECK constraint. `pytest-alembic` does not compare CHECK constraints, so `tests/integration/test_migrations.py` checks the migrated tables' constraints directly.
+
+## WP-2.3: search UI (2026-11-08)
+
+- **One URL, two shapes.** `/search?q=` returns the whole page, and only the results fragment when the request carries `HX-Request`, so search works without JavaScript and HTMX is only an enhancement. The input waits 400 ms after typing and cancels a slower earlier request; checked in a real browser, typing nine characters sent one request. Queries must be 2 to 100 characters. A failed provider call is logged and shown as a calm message with status 200, because HTMX does not swap error responses.
+- **Pictures are hot-linked from TMDB's image server**, with `referrerpolicy="no-referrer"` and lazy loading. TMDB therefore sees each viewer's IP address, but not who they are or which page they were on. A missing picture shows the first letter. The image path comes from outside, so it must match `/<letters, digits, _ or ->.<jpg|png|webp>` and the width must be one of `w92`, `w185` or `w342`; anything else gets no picture. If that exposure ever matters, or for the PWA's offline use, add a server-side image cache and serve images from our own origin.
+- **TMDB attribution** is on the search page. TMDB's guidelines also ask for its logo; that is not added yet, so check the guidelines before the app is shared more widely.
+- **Token:** `CASTTRAIL_TMDB_READ_TOKEN` (the read access token, held as a secret). With it unset, search says it is not set up. `create_app` takes an optional `metadata_provider` so tests can pass a fake.
+- Fixed in passing: the navigation overflowed sideways on a phone and now wraps.
+
+## Navigation menu (2026-11-08)
+
+- On screens narrower than 768 px the navigation collapses behind a menu button. It is a progressive enhancement: `nav.js` adds a `js` class and reveals the button, and the CSS only hides the links when that class is there, so without JavaScript the links show and wrap. The button carries `aria-expanded` and `aria-controls`, and Escape closes the menu and returns focus to the button. Checked in a real browser at phone and desktop widths.

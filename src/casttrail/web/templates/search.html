@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Search · CastTrail{% endblock %}
+{% block content %}
+<h1>Search</h1>
+<form method="get" action="/search" role="search">
+  <input id="q" name="q" type="search" value="{{ q }}" autocomplete="off" autofocus
+         maxlength="100" aria-controls="results"
+         placeholder="People, films or series"
+         aria-label="Search people, films and series"
+         hx-get="/search" hx-trigger="input changed delay:400ms, search"
+         hx-target="#results" hx-swap="innerHTML" hx-sync="this:replace"
+         hx-indicator="#searching">
+  <button type="submit">Search</button>
+</form>
+<p id="searching" class="htmx-indicator" aria-live="polite"><small>Searching&hellip;</small></p>
+<div id="results" aria-live="polite">
+  {% include "search_results.html" %}
+</div>
+<footer>
+  <small>This product uses the TMDB API but is not endorsed or certified by TMDB.</small>
+</footer>
+{% endblock %}

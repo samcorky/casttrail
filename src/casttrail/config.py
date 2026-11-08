@@ -9,6 +9,9 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="CASTTRAIL_", extra="ignore")
 
+    # TMDB's "API Read Access Token". Without it, search says it is not configured.
+    tmdb_read_token: SecretStr | None = None
+
     # The first administrator, created only when the database has no users at all.
     # There are no default credentials: with neither set, nobody is created.
     admin_email: str | None = None

@@ -143,3 +143,42 @@ def test_the_status_page_is_public_and_leads_back_home(client: TestClient) -> No
 
     assert response.status_code == 200
     assert 'href="/"' in response.text
+
+
+def test_signed_in_pages_have_a_menu_button_that_starts_hidden(
+    client: TestClient,
+) -> None:
+    _sign_in(client, "bob@example.com")
+
+    page = client.get("/").text
+
+    assert 'class="nav-toggle outline secondary" hidden' in page
+    assert 'aria-controls="nav-menu"' in page
+    assert 'aria-expanded="false"' in page
+    assert '<ul id="nav-menu">' in page
+    assert "/static/js/nav.js" in page
+
+
+def test_the_menu_button_is_labelled_for_screen_readers(client: TestClient) -> None:
+    _sign_in(client, "bob@example.com")
+
+    page = client.get("/").text
+
+    assert '<span class="visually-hidden">Menu</span>' in page
+    assert '<span aria-hidden="true">&#9776;</span>' in page
+
+
+def test_the_sign_in_page_has_no_menu_button(client: TestClient) -> None:
+    assert 'class="nav-toggle' not in client.get("/login").text
+
+
+def test_the_nav_script_and_styles_are_served(client: TestClient) -> None:
+    script = client.get("/static/js/nav.js")
+    css = client.get("/static/css/app.css")
+
+    assert script.status_code == 200
+    assert "javascript" in script.headers["content-type"]
+    assert "aria-expanded" in script.text
+    assert "Escape" in script.text
+    assert ".js #nav-menu" in css.text
+    assert ".visually-hidden" in css.text

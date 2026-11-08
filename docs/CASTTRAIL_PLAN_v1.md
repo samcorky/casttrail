@@ -224,7 +224,7 @@ Revisit these only after WP-8, each as its own slice.
 ### WP-2 Watchlist
 - [x] 2.1 TMDB provider with fixtures, `Protocol` in `providers/base.py` 🧪
 - [x] 2.2 `people`, `productions`, `credits`, `external_identities` 🗄️
-- [ ] 2.3 Search UI (HTMX) for people, films and series
+- [x] 2.3 Search UI (HTMX) for people, films and series (with posters and photos)
 - [ ] 2.4 `watches` + watch and unwatch, per-user isolation 🗄️ 🧪
 - [ ] 2.5 Franchises with the Bond seed and franchise watches 🗄️ 👁️ DEMO
 - [ ] ⛔ GATE: watches survive restart, 404 on another user's watch

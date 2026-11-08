@@ -9,6 +9,7 @@ from casttrail.auth.models import User
 from casttrail.auth.service import AuthService
 from casttrail.auth.throttle import ThrottlePolicy
 from casttrail.config import Settings
+from casttrail.providers.base import MetadataProvider
 from casttrail.web.cookies import read_session_token
 
 if TYPE_CHECKING:
@@ -151,3 +152,19 @@ def get_admin_service(session: SessionDep) -> AdminService:
 
 
 AdminServiceDep = Annotated[AdminService, Depends(get_admin_service)]
+
+
+def get_metadata_provider(request: Request) -> MetadataProvider | None:
+    """Return where people, films and series come from, if it is set up.
+
+    Args:
+        request: The current request.
+
+    Returns:
+        The provider, or ``None`` when TMDB has no token configured.
+    """
+    provider: MetadataProvider | None = request.app.state.metadata
+    return provider
+
+
+MetadataDep = Annotated[MetadataProvider | None, Depends(get_metadata_provider)]

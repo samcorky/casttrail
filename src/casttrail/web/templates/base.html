@@ -5,7 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="light dark">
     <link rel="stylesheet" href="{{ url_for('static', path='css/pico.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='css/app.css') }}">
     <script defer src="{{ url_for('static', path='js/htmx.min.js') }}"></script>
+    <script defer src="{{ url_for('static', path='js/nav.js') }}"></script>
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', path='img/logo.svg') }}">
     <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', path='img/favicon-32.png') }}">
     <link rel="apple-touch-icon" href="{{ url_for('static', path='img/apple-touch-icon.png') }}">
@@ -24,11 +26,18 @@
         </ul>
         {% if user %}
         {% set path = request.url.path %}
-        <ul>
+        {# Hidden until nav.js runs, so without JavaScript the links simply show. #}
+        <button type="button" class="nav-toggle outline secondary" hidden
+                aria-expanded="false" aria-controls="nav-menu">
+          <span aria-hidden="true">&#9776;</span>
+          <span class="visually-hidden">Menu</span>
+        </button>
+        <ul id="nav-menu">
           <li><a href="/"{% if path == "/" %} aria-current="page"{% endif %}>Dashboard</a></li>
           {% if user.is_admin %}
           <li><a href="/admin/users"{% if path.startswith("/admin") %} aria-current="page"{% endif %}>Users</a></li>
           {% endif %}
+          <li><a href="/search"{% if path == "/search" %} aria-current="page"{% endif %}>Search</a></li>
           <li><a href="/account/password"{% if path == "/account/password" %} aria-current="page"{% endif %}>Password</a></li>
           <li><a href="/status"{% if path == "/status" %} aria-current="page"{% endif %}>Status</a></li>
           <li>
