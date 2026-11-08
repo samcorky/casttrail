@@ -226,8 +226,8 @@ Revisit these only after WP-8, each as its own slice.
 - [x] 2.2 `people`, `productions`, `credits`, `external_identities` 🗄️
 - [x] 2.3 Search UI (HTMX) for people, films and series (with posters and photos)
 - [x] 2.4 `watches` + watch and unwatch, per-user isolation 🗄️ 🧪
-- [ ] 2.5 Franchises with the Bond seed and franchise watches 🗄️ 👁️ DEMO
-- [ ] ⛔ GATE: watches survive restart, 404 on another user's watch
+- [ ] 2.5 Franchises with the Bond seed and franchise watches 🗄️ 👁️ DEMO (deferred: do it alongside WP-6, when a franchise watch has alerts to drive. The Bond film list is also needed by 7.4.)
+- [x] ⛔ GATE: watches survive restart, 404 on another user's watch (met by 2.4; 2.5 is deferred)
 
 ### WP-3 Event browser
 - [ ] 3.1 Provider 1 parser against fixtures, `ListingResult.complete` logic 🧪
