@@ -190,11 +190,11 @@ Revisit these only after WP-8, each as its own slice.
 **Markers:** `[ ]` todo · `[x]` done · `🧪` the chunk must ship tests · `🗄️` the chunk adds a migration · `👁️ DEMO` a user-visible demo is needed to close the chunk · `⛔ GATE` stop and review before the next WP. A chunk is about half a day to a day, and each ends with `uv run poe check` green.
 
 ### WP-0 Spike
-- [ ] 0.1 List candidate sites and check ToS, robots and rate limits
-- [ ] 0.2 Save fixtures for 2 events and their guest lists per site
-- [ ] 0.3 Record stable IDs, cancellation signals and external links per site
-- [ ] 0.4 Pick 2 sources and write them in `docs/decisions.md`
-- [ ] ⛔ GATE: at least one source is permitted and parseable, or replan
+- [x] 0.1 List candidate sites and check ToS, robots and rate limits
+- [x] 0.2 Save fixtures for 2 events and their guest lists per site
+- [x] 0.3 Record stable IDs, cancellation signals and external links per site
+- [x] 0.4 Pick 2 sources and write them in `docs/decisions.md`
+- [x] ⛔ GATE: at least one source is permitted and parseable, or replan (passed with caveats, see `docs/decisions.md`)
 
 ### WP-1 Shell + auth
 - [x] 1.1a `uv` project, `src/` layout, Ruff + mypy + pytest config copied from Menagerist, Poe tasks (§7) 🧪
@@ -280,7 +280,7 @@ Revisit these only after WP-8, each as its own slice.
 - Renovate configured and running (autofix.ci app also installed).
 
 ### Next
-1. **WP-0 source spike has not been started.** It is the largest risk in the plan: if no UK convention site permits scraping and has usable data, the product needs replanning. Do it before or alongside 1.6.
+1. **WP-0 is done** (see `docs/decisions.md`): Rostercon is primary, Comiconomicon secondary, neither grants explicit permission to scrape, and both parse from saved fixtures. Open: where Rostercon shows a cancelled guest (WP-3), and Rostercon returns 503 under load, so use a slow rate and a cache.
 2. Chunk 1.6 (a to d), then 1.7 and the WP-1 gate.
 
 ### Decisions made since the plan was written
