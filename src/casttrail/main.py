@@ -13,6 +13,7 @@ from casttrail.auth.service import AuthService
 from casttrail.config import Settings
 from casttrail.db import create_engine, create_session_factory
 from casttrail.web import static_files
+from casttrail.web.account_routes import router as account_router
 from casttrail.web.admin_routes import router as admin_router
 from casttrail.web.auth_routes import router as auth_router
 from casttrail.web.csrf import verify_same_origin
@@ -93,4 +94,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(router)
     app.include_router(auth_router)
     app.include_router(admin_router)
+    app.include_router(account_router)
     return app
