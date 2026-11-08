@@ -204,8 +204,11 @@ Revisit these only after WP-8, each as its own slice.
 - [x] 1.3 SQLAlchemy async + SQLite (WAL, `BEGIN IMMEDIATE`) and Alembic 🗄️
 - [x] 1.4 `users` + `sessions` tables, argon2 hashing, login and logout, hashed server-side sessions, strict cookies 🗄️ 🧪
 - [x] 1.5a CSRF by `Sec-Fetch-Site`/`Origin` on every unsafe method, login included (done with 1.4) 🧪
-- [x] 1.5b Login throttle per username and IP 🧪
-- [ ] 1.6 Admin bootstrap from env, admin user management, private dashboard 👁️ DEMO
+- [x] 1.5b Login throttle per username and IP, plus a device cookie giving known browsers a higher, finite per-account limit (PR #7) 🗄️ 🧪
+- [ ] 1.6a Admin bootstrap from env (no default credentials), first-run only 🧪
+- [ ] 1.6b Admin user management pages: create, disable and enable, make admin 🧪
+- [ ] 1.6c Private dashboard and navigation; two users see separate pages 👁️ DEMO
+- [ ] 1.6d Change password: ends other sessions and calls `AuthService.forget_devices` 🧪
 - [ ] 1.7 Extend the architecture tests as packages appear (providers, identity, matching)
 - [ ] ⛔ GATE: two users are isolated, 95% coverage on `auth/`
 
@@ -264,3 +267,36 @@ Revisit these only after WP-8, each as its own slice.
 - [ ] 8.3 Two-user smoke test, security pass (cookies, `/docs` disabled)
 - [ ] 8.4 README and `docs/decisions.md` cleanup 👁️ DEMO
 - [ ] ⛔ GATE: fresh install and a restore both work
+
+## 12. Status and handoff
+
+**As of 2026-11-08.** `main` is at PR #7. Local `uv run poe check` passes with 118 tests and about 99.8% coverage, and the 95% gate on `auth/` is met.
+
+### Done (WP-1, chunks 1.1 to 1.5)
+- Tooling and CI: Ruff, strict mypy, pytest with branch coverage, archunitpython architecture tests, pytest-alembic, prek hooks, `CI passed` and `Hooks: prek (autofix)` as the required checks. `main` is protected and PR-only, squash merge, auto-merge allowed.
+- App shell: `create_app()`, `/health`, status page, local Pico and HTMX.
+- Database: async SQLite (WAL, `BEGIN IMMEDIATE`), Alembic, migrations 0001 to 0004 (baseline, users and sessions, sign-in attempts, known devices).
+- Auth: Argon2id passwords, hashed server-side sessions, strict cookie reader, `SameSite=Lax`, `__Host-Http-` prefix when Secure, CSRF check on every unsafe method, login throttle (5 per email, 20 per address, 15 minute window), device cookie raising the per-account limit to 20 for a known browser.
+- Renovate configured and running (autofix.ci app also installed).
+
+### Next
+1. **WP-0 source spike has not been started.** It is the largest risk in the plan: if no UK convention site permits scraping and has usable data, the product needs replanning. Do it before or alongside 1.6.
+2. Chunk 1.6 (a to d), then 1.7 and the WP-1 gate.
+
+### Decisions made since the plan was written
+- Providers stay in-tree behind a `Protocol`; entry points deferred.
+- HTMX only, no JSON API.
+- Own sessions and cookies instead of FastAPI Users.
+- CSRF by `Sec-Fetch-Site` and `Origin` (no form tokens). A request with neither header is refused, so `curl` needs an `Origin` header.
+- `SameSite=Lax`, not `Strict`, so a link from an ntfy alert opens the app signed in.
+- HTTP client is `httpx2`. Server is Granian (`uv run poe serve`).
+- Architecture rules are archunitpython tests, not Import Linter.
+
+### Open items and reminders
+- `AuthService.forget_devices` exists but is not called anywhere yet. Chunk 1.6d must call it on password change, and any later password reset or session revocation must too.
+- Client address comes from `request.client.host`. Behind a reverse proxy it needs a trusted-proxy setting (WP-8), or the per-address limit is shared by everyone.
+- `sessions.client_ip` and `user_agent` are stored but no page shows them yet. A sessions page grouped by browser is a candidate for after 1.6.
+- Renovate PR #9 (Python 3.15 interpreter) is open and blocked. Hold it until there is more code to test against.
+- Menagerist issues raised from this work: #297 (Renovate automerge settings, milestone v0.2026.11.3) and #312 (device cookie and device-grouped sessions, milestone Identity and ownership).
+- PyCharm exports `VIRTUAL_ENV` pointing at a stray `venv/` folder, which makes uv warn. Repoint the interpreter to `.venv` and delete `venv/`.
+- GitHub repo is public (existing `LICENSE` is MIT).
