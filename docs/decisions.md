@@ -38,3 +38,23 @@ polite requests (2 s apart, identifying user agent `CastTrail-spike/0.1`).
 ### Still to do in WP-0
 
 - 0.2 fixtures, 0.3 stable IDs and cancellation signals, 0.4 final pick.
+
+## WP-0.3: identifiers, cancellation signals, external links (checked 2026-11-08)
+
+| | Rostercon | Comiconomicon |
+|---|---|---|
+| Event ID | URL slug (`/en/event-convention/<slug>`), also the JSON-LD `@id`. Slugs carry the year or edition, so a re-run gets a new slug. | Numeric ID in `/event/<id>/<name>`. The name part is cosmetic. |
+| Person ID | Slug (`/en/people/<slug>`). The `-en` suffix is not consistent (`paul-mcgann-en`, `jo-martin`), so match on name plus slug, not slug alone. | Numeric ID in `/guest/<id>/<name>`. |
+| Event cancelled | `eventStatus` in the JSON-LD. `https://schema.org/EventCancelled` is confirmed (Star-Con 2026, Hull) and the page also shows "Canceled" with a last-update date. Postponed status not yet seen. | No status field found. A cancelled event simply disappears or stays stale. |
+| Guest cancelled | No marker found on the guest grid or in JSON-LD. A withdrawn guest probably just drops from the `performer` list. The page warns the list is subject to change. | No marker found. The page says appearances are "determined by automated algorithms". |
+| Organiser link | `organizer.name` in JSON-LD when present. Not always. No organiser URL in the JSON-LD. | `a.eventsitelink` href (for example `mamanoxpresents.com`). |
+| TMDB/IMDb link | None on person pages. Matching to TMDB has to be by name. | None on pages fetched. |
+
+**Consequences for the design**
+- A guest dropping out of a list is not evidence of cancellation, which matches the project rule that a missing listing is never a cancellation. Treat `EventCancelled` as the only trusted cancellation signal, and only from Rostercon.
+- Name-based matching to TMDB is required for both sources, with a manual-identity override.
+
+**Open**
+- Where Rostercon shows a cancelled guest (the project owner says it does). Not found on the Comic Con Liverpool 2022 or 2026 guest grids, which have no per-guest status. Needs a pointer to an example.
+- Rostercon began returning HTTP 503 after about 25 requests in 30 minutes. The provider needs a conservative delay and backoff.
+- `EventPostponed` or `EventRescheduled` handling: the Wales Comic Con Telford 2021 page failed with 503 before it could be read.
