@@ -1,8 +1,10 @@
 import re
+from typing import Any
 
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from jinja2 import pass_context
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -14,6 +16,22 @@ from casttrail.web.dependencies import CurrentUser, SessionDep, WatchServiceDep
 
 router = APIRouter()
 templates = Jinja2Templates(directory=WEB_DIR / "templates")
+
+
+@pass_context
+def _path_for(context: dict[str, Any], name: str, /, **path_params: Any) -> str:  # noqa: ANN401
+    """Give a route's path, not its full address.
+
+    Starlette's own ``url_for`` builds ``scheme://host/path`` from the request, and
+    behind an HTTPS proxy the app sees plain HTTP, so every stylesheet and script
+    would be an ``http://`` address that a browser blocks on an HTTPS page. A path
+    alone always resolves against whatever address the browser used.
+    """
+    request: Request = context["request"]
+    return str(request.app.url_path_for(name, **path_params))
+
+
+templates.env.globals["url_for"] = _path_for
 
 # TMDB image paths look like "/abc123.jpg". Anything else is refused, because the path
 # comes from outside and ends up in a URL.
