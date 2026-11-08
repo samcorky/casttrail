@@ -191,3 +191,12 @@ Found while putting a real instance on Tailscale. Both matter again for WP-8.
 - **The run's record** is a JSON count of what happened (`RefreshReport`) kept in `job_runs.summary`: no page text, URLs or credentials. 3.6 will show it.
 - **Gate check:** a second refresh makes the same requests and changes nothing (no new conventions or appearances, `events_changed` 0).
 - **Not done:** an event's own date range is not read until its page is fetched, so an event that started more than 2 days ago but is still running (rare) is missed. Rostercon sends no `ETag`, so every upcoming event page is refetched each run; at 10 s spacing the cap keeps a run near 10 minutes.
+
+## WP-3.4d: the daily timer and the refresh button (2026-11-08)
+
+- **Timer:** APScheduler 3.x (`AsyncIOScheduler`, pinned `<4` as the plan says) runs inside the app. It is **off by default**: set `CASTTRAIL_REFRESH_ENABLED=true` to run the refresh daily at `CASTTRAIL_REFRESH_HOUR` (0 to 23, server local time, default 4). Off by default so a fresh install makes no outbound requests until you choose to. One run at a time, and a start missed by up to an hour (restart, busy server) still runs once.
+- **Button:** `/admin/refresh` (administrators only; others get 404 like the other admin pages) lists the last ten runs from `job_runs` and has a "Refresh now" button. The refresh takes minutes at Rostercon's pace, so the button starts it in the background and redirects at once with a message; a second press while this process is still running one says so and starts nothing. The database lock in 3.4c covers any other process.
+- **Failures never escape:** a timer or button run that crashes is logged and ends there; it cannot stop the scheduler or the app. A run that Rostercon cut short is logged as a warning and shown in the table with its reason.
+- **Shutdown:** the timer is stopped, a running refresh is cancelled, and the Rostercon HTTP client is closed. A cancelled run leaves a `running` row that the next run replaces after 2 hours (the stale rule from 3.4c).
+- **Wiring:** `create_app(refresher=...)` takes a stand-in for tests; otherwise one `RefreshJob` is built with a single fetcher and people index kept for the life of the app, so Rostercon spacing and the cached index carry across runs. Creating the client makes no network request.
+- **Not done:** no per-user view of the data yet (3.5), and the table shows only counts, not which people were unmatched (3.6 and WP-4).

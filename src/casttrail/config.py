@@ -1,6 +1,6 @@
 from typing import Literal, Self
 
-from pydantic import SecretStr, model_validator
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     # The interactive API docs are off unless explicitly enabled.
     docs_enabled: bool = False
     database_url: str = "sqlite+aiosqlite:///data/casttrail.db"
+
+    # Off by default, so nothing contacts Rostercon until you ask for it. When on, the
+    # refresh for watched people runs once a day at this hour (server local time).
+    # The admin page can run it by hand either way.
+    refresh_enabled: bool = False
+    refresh_hour: int = Field(default=4, ge=0, le=23)
 
     session_ttl_hours: int = 24 * 30
     cookie_name: str = "casttrail-session"

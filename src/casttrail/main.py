@@ -3,6 +3,8 @@ from contextlib import asynccontextmanager
 from datetime import timedelta
 from typing import TYPE_CHECKING
 
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.exc import OperationalError
@@ -12,6 +14,12 @@ from casttrail.auth.bootstrap import bootstrap_admin
 from casttrail.auth.service import AuthService
 from casttrail.config import Settings
 from casttrail.db import create_engine, create_session_factory
+from casttrail.discovery.schedule import RefreshJob, run_in_background
+from casttrail.providers.rostercon_client import (
+    PeopleIndex,
+    RosterconFetcher,
+    create_client as create_rostercon_client,
+)
 from casttrail.providers.tmdb import TmdbProvider, create_client
 from casttrail.web import static_files
 from casttrail.web.account_routes import router as account_router
@@ -29,6 +37,7 @@ if TYPE_CHECKING:
 
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+    from casttrail.discovery.schedule import Refresher
     from casttrail.providers.base import MetadataProvider
 
 logger = logging.getLogger(__name__)
@@ -63,10 +72,33 @@ async def _create_first_admin(
         logger.info("Created the first administrator %s", settings.admin_email)
 
 
+def _start_scheduler(
+    settings: Settings, refresher: Refresher
+) -> AsyncIOScheduler | None:
+    """Start the daily refresh timer, if it is switched on."""
+    if not settings.refresh_enabled:
+        return None
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(
+        run_in_background,
+        CronTrigger(hour=settings.refresh_hour, minute=0),
+        args=[refresher],
+        id="rostercon-refresh",
+        # One at a time, and a start missed by up to an hour (the server was busy or
+        # just restarting) still runs once rather than waiting for tomorrow.
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=3600,
+    )
+    scheduler.start()
+    return scheduler
+
+
 def create_app(
     settings: Settings | None = None,
     *,
     metadata_provider: MetadataProvider | None = None,
+    refresher: Refresher | None = None,
 ) -> FastAPI:
     """Build the application.
 
@@ -75,6 +107,9 @@ def create_app(
         metadata_provider: Where people, films and series come from. Tests pass a fake
             here; otherwise TMDB is used when its token is set, and search is
             switched off when it is not.
+        refresher: What the daily timer and the admin page run to refresh conventions.
+            Tests pass a fake; otherwise Rostercon is contacted, but only when a
+            refresh actually runs.
 
     Returns:
         The configured FastAPI application.
@@ -90,10 +125,29 @@ def create_app(
         if metadata_provider is None and settings.tmdb_read_token is not None:
             tmdb_client = create_client(settings.tmdb_read_token.get_secret_value())
             app.state.metadata = TmdbProvider(tmdb_client)
+        rostercon_http = None
+        if refresher is None:
+            rostercon_http = create_rostercon_client()
+            fetcher = RosterconFetcher(rostercon_http)
+            app.state.refresher = RefreshJob(
+                app.state.session_factory, fetcher, PeopleIndex(fetcher)
+            )
+        else:
+            app.state.refresher = refresher
+        app.state.refresh_task = None
+        scheduler = _start_scheduler(settings, app.state.refresher)
+        app.state.scheduler = scheduler
         try:
             await _create_first_admin(settings, app.state.session_factory)
             yield
         finally:
+            if scheduler is not None:
+                scheduler.shutdown(wait=False)
+            task = app.state.refresh_task
+            if task is not None and not task.done():
+                task.cancel()
+            if rostercon_http is not None:
+                await rostercon_http.aclose()
             if tmdb_client is not None:
                 await tmdb_client.aclose()
             await engine.dispose()
