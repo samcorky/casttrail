@@ -7,7 +7,8 @@ from alembic import context
 # Importing each models module registers its tables on Base.metadata.
 import casttrail.auth.models
 import casttrail.catalogue.models
-import casttrail.identity.models  # noqa: F401
+import casttrail.identity.models
+import casttrail.watching.models  # noqa: F401
 from casttrail.config import Settings
 from casttrail.db import Base, create_engine
 

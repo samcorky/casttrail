@@ -82,6 +82,11 @@ class FakeMetadata:
             raise self.error
         return self.productions
 
+    async def production(
+        self, media_type: MediaType, tmdb_id: int
+    ) -> Production | None:
+        return None
+
     async def person(self, tmdb_id: int) -> PersonDetail | None:
         return None
 

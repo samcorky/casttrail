@@ -104,3 +104,12 @@ Other choices: a person has at most one credit per production (the writer picks 
 ## Navigation menu (2026-11-08)
 
 - On screens narrower than 768 px the navigation collapses behind a menu button. It is a progressive enhancement: `nav.js` adds a `js` class and reveals the button, and the CSS only hides the links when that class is there, so without JavaScript the links show and wrap. The button carries `aria-expanded` and `aria-controls`, and Escape closes the menu and returns focus to the button. Checked in a real browser at phone and desktop widths.
+
+## WP-2.4: watches (2026-11-08)
+
+- **One table, two kinds of target.** `watches` points at either a person or a production, enforced by a CHECK that exactly one is set. A user can follow a given person or production only once (two unique constraints). Franchise watches (2.5) are a separate table, so this one stays simple.
+- **The details come from TMDB, not from the form.** The Watch buttons post only an id (and the media type for a film or series); the server looks the thing up, so nothing a browser sends reaches the catalogue. This costs one TMDB request per new watch. If TMDB is down or not configured, nothing is added and the person is told.
+- **Watching adds the person or production to the shared catalogue** and refreshes its name and picture. A person's TMDB and IMDb ids are recorded as external identities. An identity already linked to a person is never moved, so a link made by hand is never undone by watching.
+- **Isolation:** every read and delete takes the user's id. Another user's watch and one that does not exist give the same 404 page. Redirects after a watch go only to `search` or `watchlist`, never to an address from the form.
+- **Not done yet:** a film or series watch does nothing until events exist (WP-3) and matching (WP-4). `credits` is still unfilled; the top-billed expansion in WP-6 will fill it.
+- **Known:** an admin's navigation now wraps onto a second line just above the 768 px breakpoint. Revisit if more links are added.

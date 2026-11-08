@@ -178,6 +178,30 @@ class TmdbProvider:
         ]
         return productions
 
+    async def production(
+        self, media_type: MediaType, tmdb_id: int
+    ) -> Production | None:
+        """Return one film or series.
+
+        Args:
+            media_type: Whether it is a film or a series.
+            tmdb_id: TMDB's id for it.
+
+        Returns:
+            The production, or ``None`` if TMDB has no such film or series.
+
+        Raises:
+            ProviderError: If TMDB answers with something that has no title.
+        """
+        data = await self._get(f"{media_type}/{tmdb_id}", allow_missing=True)
+        if data is None:
+            return None
+        production = _production(self._parse(_WireProduction, data), media_type)
+        if production is None:
+            msg = "TMDB changed its response format."
+            raise ProviderError(msg)
+        return production
+
     async def person(self, tmdb_id: int) -> PersonDetail | None:
         """Return one person with their IMDb id.
 

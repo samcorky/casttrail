@@ -90,6 +90,12 @@ class MetadataProvider(Protocol):
         """Find films and series by title."""
         ...
 
+    async def production(
+        self, media_type: MediaType, tmdb_id: int
+    ) -> Production | None:
+        """Return one film or series, or ``None`` if the source has no such thing."""
+        ...
+
     async def person(self, tmdb_id: int) -> PersonDetail | None:
         """Return one person, or ``None`` if the source has no such person."""
         ...

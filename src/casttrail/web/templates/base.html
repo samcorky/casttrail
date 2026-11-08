@@ -37,6 +37,7 @@
           {% if user.is_admin %}
           <li><a href="/admin/users"{% if path.startswith("/admin") %} aria-current="page"{% endif %}>Users</a></li>
           {% endif %}
+          <li><a href="/watchlist"{% if path == "/watchlist" %} aria-current="page"{% endif %}>Watchlist</a></li>
           <li><a href="/search"{% if path == "/search" %} aria-current="page"{% endif %}>Search</a></li>
           <li><a href="/account/password"{% if path == "/account/password" %} aria-current="page"{% endif %}>Password</a></li>
           <li><a href="/status"{% if path == "/status" %} aria-current="page"{% endif %}>Status</a></li>

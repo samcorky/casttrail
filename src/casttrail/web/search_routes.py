@@ -5,7 +5,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, Response
 
 from casttrail.providers.base import ProviderError
-from casttrail.web.dependencies import CurrentUser, MetadataDep
+from casttrail.web.dependencies import CurrentUser, MetadataDep, WatchServiceDep
 from casttrail.web.routes import templates
 
 logger = logging.getLogger(__name__)
@@ -18,7 +18,11 @@ MAX_QUERY_LENGTH = 100
 
 @router.get("", response_class=HTMLResponse, response_model=None)
 async def search(
-    request: Request, user: CurrentUser, metadata: MetadataDep, q: str = ""
+    request: Request,
+    user: CurrentUser,
+    metadata: MetadataDep,
+    service: WatchServiceDep,
+    q: str = "",
 ) -> Response:
     """Search for people, films and series.
 
@@ -29,6 +33,7 @@ async def search(
         request: The current request.
         user: The signed-in user.
         metadata: Where people, films and series come from, if it is set up.
+        service: The watch service, to show what the user already watches.
         q: What was typed.
 
     Returns:
@@ -42,6 +47,8 @@ async def search(
         "people": [],
         "films": [],
         "series": [],
+        "watched_people": {},
+        "watched_productions": {},
     }
     if metadata is None:
         context["message"] = (
@@ -66,6 +73,8 @@ async def search(
             context["people"] = people
             context["films"] = [p for p in productions if p.media_type == "movie"]
             context["series"] = [p for p in productions if p.media_type == "tv"]
+            context["watched_people"] = await service.watched_people(user.id)
+            context["watched_productions"] = await service.watched_productions(user.id)
             if not (people or productions):
                 context["message"] = f"Nothing found for “{query}”."
     template = (

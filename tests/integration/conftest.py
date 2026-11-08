@@ -7,7 +7,8 @@ from alembic.config import Config
 
 import casttrail.auth.models
 import casttrail.catalogue.models
-import casttrail.identity.models  # noqa: F401
+import casttrail.identity.models
+import casttrail.watching.models  # noqa: F401
 from casttrail.config import Settings  # noqa: TC001  (pytest resolves fixture types)
 from casttrail.db import Base, create_engine, create_session_factory
 

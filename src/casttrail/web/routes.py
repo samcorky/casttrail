@@ -10,7 +10,7 @@ from casttrail import get_version
 from casttrail.db import current_revision
 from casttrail.providers.tmdb import IMAGE_BASE_URL
 from casttrail.web import WEB_DIR
-from casttrail.web.dependencies import CurrentUser, SessionDep
+from casttrail.web.dependencies import CurrentUser, SessionDep, WatchServiceDep
 
 router = APIRouter()
 templates = Jinja2Templates(directory=WEB_DIR / "templates")
@@ -69,17 +69,23 @@ async def favicon() -> RedirectResponse:
 
 
 @router.get("/", response_class=HTMLResponse)
-async def dashboard(request: Request, user: CurrentUser) -> HTMLResponse:
+async def dashboard(
+    request: Request, user: CurrentUser, service: WatchServiceDep
+) -> HTMLResponse:
     """Render the signed-in user's own dashboard.
 
     Args:
         request: The current request.
         user: The signed-in user.
+        service: The watch service.
 
     Returns:
         The rendered page.
     """
-    return templates.TemplateResponse(request, "dashboard.html", {"user": user})
+    watches = await service.list_watches(user.id)
+    people = sum(1 for w in watches if w.person is not None)
+    context = {"user": user, "people": people, "productions": len(watches) - people}
+    return templates.TemplateResponse(request, "dashboard.html", context)
 
 
 @router.get("/status", response_class=HTMLResponse)

@@ -34,7 +34,7 @@ def _revisions(database_url: str) -> list[str]:
 def test_upgrade_on_an_empty_database_reaches_head(database_url: str) -> None:
     command.upgrade(_config(database_url), "head")
 
-    assert _revisions(database_url) == ["0005"]
+    assert _revisions(database_url) == ["0006"]
 
 
 def test_upgrade_is_repeatable(database_url: str) -> None:
@@ -43,7 +43,7 @@ def test_upgrade_is_repeatable(database_url: str) -> None:
     command.upgrade(config, "head")
     command.upgrade(config, "head")
 
-    assert _revisions(database_url) == ["0005"]
+    assert _revisions(database_url) == ["0006"]
 
 
 def test_status_page_shows_the_applied_revision(
@@ -52,7 +52,7 @@ def test_status_page_shows_the_applied_revision(
     command.upgrade(_config(database_url), "head")
 
     with TestClient(create_app(Settings(database_url=database_url))) as client:
-        assert "Database revision 0005" in client.get("/status").text
+        assert "Database revision 0006" in client.get("/status").text
 
 
 def _connect(database_url: str) -> sqlite3.Connection:
@@ -94,7 +94,7 @@ def test_upgrading_from_the_previous_revision_keeps_existing_data(
             ("a@example.com",)
         ]
         assert _table_names(connection) >= NEW_TABLES
-    assert _revisions(database_url) == ["0005"]
+    assert _revisions(database_url) == ["0006"]
 
 
 def test_the_migrated_schema_enforces_its_constraints(database_url: str) -> None:
