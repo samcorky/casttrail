@@ -2,6 +2,7 @@
 {% block title %}Sign in · CastTrail{% endblock %}
 {% block content %}
 <article>
+  <img src="{{ url_for('static', path='img/logo.svg') }}" alt="CastTrail" width="72" height="72">
   <h1>Sign in</h1>
   {% if error %}
   <p role="alert"><strong>{{ error }}</strong></p>

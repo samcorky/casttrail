@@ -1,3 +1,4 @@
+import struct
 from typing import TYPE_CHECKING
 
 import pytest
@@ -74,3 +75,72 @@ def test_api_docs_can_be_enabled(database_url: str) -> None:
 
     with TestClient(app) as test_client:
         assert test_client.get("/docs").status_code == 200
+
+
+def _png_size(data: bytes) -> tuple[int, int, int]:
+    assert data[:8] == b"\x89PNG\r\n\x1a\n"
+    width, height, _depth, colour_type = struct.unpack(">IIBB", data[16:26])
+    return width, height, colour_type
+
+
+@pytest.mark.parametrize(
+    ("name", "size"),
+    [
+        ("icon-192.png", 192),
+        ("icon-512.png", 512),
+        ("icon-maskable-512.png", 512),
+        ("apple-touch-icon.png", 180),
+        ("favicon-32.png", 32),
+    ],
+)
+def test_app_icons_are_served_at_their_declared_size(
+    client: TestClient, name: str, size: int
+) -> None:
+    response = client.get(f"/static/img/{name}")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/png"
+    assert _png_size(response.content)[:2] == (size, size)
+
+
+def test_the_maskable_icon_is_full_bleed_and_the_others_have_transparent_corners(
+    client: TestClient,
+) -> None:
+    rgb, rgba = 2, 6
+
+    maskable = client.get("/static/img/icon-maskable-512.png").content
+    rounded = client.get("/static/img/icon-512.png").content
+
+    assert _png_size(maskable)[2] == rgb
+    assert _png_size(rounded)[2] == rgba
+
+
+def test_the_logo_is_an_svg(client: TestClient) -> None:
+    for name in ("logo.svg", "logo-maskable.svg"):
+        response = client.get(f"/static/img/{name}")
+
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("image/svg+xml")
+        assert "<svg" in response.text
+
+
+def test_pages_declare_the_favicon_and_touch_icon(client: TestClient) -> None:
+    page = client.get("/login").text
+
+    assert 'rel="icon" type="image/svg+xml"' in page
+    assert "/static/img/favicon-32.png" in page
+    assert 'rel="apple-touch-icon"' in page
+
+
+def test_the_sign_in_page_shows_the_logo(client: TestClient) -> None:
+    assert 'alt="CastTrail"' in client.get("/login").text
+
+
+def test_the_default_favicon_path_redirects_to_the_icon(client: TestClient) -> None:
+    redirect = client.get("/favicon.ico", follow_redirects=False)
+    followed = client.get("/favicon.ico")
+
+    assert redirect.status_code == 308
+    assert redirect.headers["location"] == "/static/img/favicon-32.png"
+    assert followed.status_code == 200
+    assert followed.headers["content-type"] == "image/png"
