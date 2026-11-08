@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Request, Response
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
@@ -30,6 +30,16 @@ async def health(session: SessionDep, response: Response) -> dict[str, str]:
         response.status_code = 503
         return {"status": "unavailable"}
     return {"status": "ok"}
+
+
+@router.get("/favicon.ico", include_in_schema=False)
+async def favicon() -> RedirectResponse:
+    """Send browsers that ask for the default favicon path to the real icon.
+
+    Returns:
+        A permanent redirect to the 32 pixel PNG.
+    """
+    return RedirectResponse("/static/img/favicon-32.png", status_code=308)
 
 
 @router.get("/", response_class=HTMLResponse)

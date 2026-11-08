@@ -6,12 +6,22 @@
     <meta name="color-scheme" content="light dark">
     <link rel="stylesheet" href="{{ url_for('static', path='css/pico.min.css') }}">
     <script defer src="{{ url_for('static', path='js/htmx.min.js') }}"></script>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', path='img/logo.svg') }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', path='img/favicon-32.png') }}">
+    <link rel="apple-touch-icon" href="{{ url_for('static', path='img/apple-touch-icon.png') }}">
     <title>{% block title %}CastTrail{% endblock %}</title>
   </head>
   <body>
     <header class="container">
       <nav aria-label="Main navigation">
-        <ul><li><a href="/" class="contrast"><strong>CastTrail</strong></a></li></ul>
+        <ul>
+          <li>
+            <a href="/" class="contrast">
+              <img src="{{ url_for('static', path='img/logo.svg') }}" alt="" width="28" height="28" style="vertical-align: middle; margin-inline-end: 0.4rem">
+              <strong>CastTrail</strong>
+            </a>
+          </li>
+        </ul>
         {% if user %}
         {% set path = request.url.path %}
         <ul>

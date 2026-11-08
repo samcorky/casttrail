@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="CastTrail">
+<rect width="512" height="512" fill="#2d3a8c"/>
+<g transform="translate(92 92) scale(0.64)">
+<path d="M112 404 C 112 290, 262 340, 262 238" fill="none" stroke="#ffffff" stroke-width="40" stroke-linecap="round"/>
+<path d="M326.0 84.0 L353.0 158.8 L432.5 161.4 L369.7 210.2 L391.8 286.6 L326.0 242.0 L260.2 286.6 L282.3 210.2 L219.5 161.4 L299.0 158.8 Z" fill="#ffc53d"/>
+</g>
+</svg>
