@@ -9,7 +9,7 @@ A self-hosted app for 2-3 trusted users. It watches actors, films and series, fi
 
 **Optional collections:** users can also track simple per-user collections (e.g. "autographs I've collected"). **Bond is an add-on** on top of that: a poster challenge of 25 or 27 films with one unique in-person signer per poster, per collection. The core app must work fully with collections and Bond absent.
 
-**Non-goals:** SaaS, ticketing, JSON API, email/SMTP, OIDC, CLI, scarcity ranking, collection sharing, generic scraper engine.
+**Non-goals:** SaaS, ticketing, JSON API, OIDC, CLI, scarcity ranking, collection sharing, generic scraper engine.
 
 ## 2. Decisions that change from the old plan
 
@@ -77,6 +77,7 @@ class ConventionProvider(Protocol):
 - Event key is `appear:{canonical_appearance_id}:{person_id}`. A material change adds a new `rev` column value, not a hash. Per-user uniqueness is `(user_id, event_key)`.
 - Delivery has a retry schedule of 1m, 5m, 30m, 2h, then failed. Delivery is at-least-once.
 - ntfy: the server URL is set by the admin, and each user gets a random generated topic by default. Message text is sanitised.
+- Channels: ntfy is the first. Email (SMTP) and PWA Web Push are likely to follow as further channels (see section 9), so keep the outbox channel-agnostic. A delivery records its `channel`, a user's destinations are per channel, and nothing about the event key, `rev`, baseline suppression or the retry schedule is ntfy-specific. Settle the destination table's shape at 6.1 (one table holding a channel and its settings, not `ntfy_destinations`).
 
 **Bond signer uniqueness**
 - `signatures(id, collection_id, item_id, person_id, in_person, ...)`.
@@ -175,9 +176,13 @@ This is wide on purpose. Source quality (WP-0, 3, 5) is the main variance.
 
 ## 9. Deferred
 
-Entry-point plugins, JSON API, SMTP, digests, Bond ranking and bipartite assignment, collection sharing, extra providers, OIDC, advanced identity scoring.
+Entry-point plugins, JSON API, digests, Bond ranking and bipartite assignment, collection sharing, extra providers, OIDC, advanced identity scoring.
 
-**Installable PWA (optional).** Web app manifest, the 1.6e icons, a service worker that caches only static assets, and an install prompt. Notes: it needs HTTPS, so it follows WP-8; the service worker must never cache pages or responses behind a login, so it stays a shell and offers no offline data; and a tap on an ntfy alert should open the installed app (the `SameSite=Lax` decision already allows that link to arrive signed in). Do 1.6e first so the icon set is ready.
+**Installable PWA (optional).** Web app manifest, the 1.6e icons, a service worker that caches only static assets, and an install prompt. Notes: it needs HTTPS, so it follows WP-8; the service worker must never cache pages or responses behind a login, so it stays a shell and offers no offline data; and a tap on an ntfy alert should open the installed app (the `SameSite=Lax` decision already allows that link to arrive signed in). Do 1.6e first so the icon set is ready. Web Push (below) builds on it.
+
+**More notification channels (planned after WP-6).** Each is its own slice behind the channel-agnostic outbox.
+- *Email (SMTP):* an admin-set server, a per-user address, a plain-text body built from the same sanitised message, and a test button. It is only a new adapter.
+- *Web Push to an installed PWA:* needs the PWA first (manifest, service worker, HTTPS), VAPID keys held as admin-set secrets, one stored push subscription per browser, and removal of a subscription when the push service answers 404 or 410. iOS delivers push only to a PWA added to the home screen.
 
 Revisit these only after WP-8, each as its own slice.
 
@@ -186,6 +191,7 @@ Revisit these only after WP-8, each as its own slice.
 1. Which two convention sites, and are they permitted?
 2. Final auth choice (custom sessions or FastAPI Users)?
 3. Is Python 3.14 compatible with every dependency's wheels? If not, use 3.13.
+4. (For WP-6) Which channels besides ntfy, and in what order: SMTP, Web Push?
 
 ## 11. Chunk checklist
 
