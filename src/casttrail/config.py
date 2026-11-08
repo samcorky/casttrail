@@ -1,5 +1,6 @@
-from typing import Literal
+from typing import Literal, Self
 
+from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -7,6 +8,12 @@ class Settings(BaseSettings):
     """Application settings, read from ``CASTTRAIL_*`` environment variables."""
 
     model_config = SettingsConfigDict(env_prefix="CASTTRAIL_", extra="ignore")
+
+    # The first administrator, created only when the database has no users at all.
+    # There are no default credentials: with neither set, nobody is created.
+    admin_email: str | None = None
+    admin_password: SecretStr | None = None
+    admin_display_name: str = "Admin"
 
     # The interactive API docs are off unless explicitly enabled.
     docs_enabled: bool = False
@@ -24,3 +31,12 @@ class Settings(BaseSettings):
     signin_max_failures_per_user_known_device: int = 20
     signin_max_failures_per_ip: int = 20
     signin_window_minutes: int = 15
+
+    @model_validator(mode="after")
+    def _admin_credentials_come_as_a_pair(self) -> Self:
+        if bool(self.admin_email) != bool(
+            self.admin_password and self.admin_password.get_secret_value()
+        ):
+            msg = "CASTTRAIL_ADMIN_EMAIL and _PASSWORD must be set together"
+            raise ValueError(msg)
+        return self
