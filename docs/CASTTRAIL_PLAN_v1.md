@@ -177,6 +177,8 @@ This is wide on purpose. Source quality (WP-0, 3, 5) is the main variance.
 
 Entry-point plugins, JSON API, SMTP, digests, Bond ranking and bipartite assignment, collection sharing, extra providers, OIDC, advanced identity scoring.
 
+**Installable PWA (optional).** Web app manifest, the 1.6e icons, a service worker that caches only static assets, and an install prompt. Notes: it needs HTTPS, so it follows WP-8; the service worker must never cache pages or responses behind a login, so it stays a shell and offers no offline data; and a tap on an ntfy alert should open the installed app (the `SameSite=Lax` decision already allows that link to arrive signed in). Do 1.6e first so the icon set is ready.
+
 Revisit these only after WP-8, each as its own slice.
 
 ## 10. Open questions (answer inside WP-0 or WP-1)
@@ -209,6 +211,7 @@ Revisit these only after WP-8, each as its own slice.
 - [ ] 1.6b Admin user management pages: create, disable and enable, make admin 🧪
 - [ ] 1.6c Private dashboard and navigation; two users see separate pages 👁️ DEMO
 - [ ] 1.6d Change password: ends other sessions and calls `AuthService.forget_devices` 🧪
+- [ ] 1.6e Logo, favicon and app icons (SVG source, 192 and 512 PNG, one maskable) in `web/static/img/`, shown in the nav and on the sign-in page; fixes the `/favicon.ico` 404 👁️ DEMO
 - [ ] 1.7 Extend the architecture tests as packages appear (providers, identity, matching)
 - [ ] ⛔ GATE: two users are isolated, 95% coverage on `auth/`
 
@@ -281,7 +284,7 @@ Revisit these only after WP-8, each as its own slice.
 
 ### Next
 1. **WP-0 is done** (see `docs/decisions.md`): Rostercon is primary, Comiconomicon secondary, neither grants explicit permission to scrape, and both parse from saved fixtures. Open: where Rostercon shows a cancelled guest (WP-3), and Rostercon returns 503 under load, so use a slow rate and a cache.
-2. Chunk 1.6 (a to d), then 1.7 and the WP-1 gate.
+2. Chunk 1.6 (a to e, with the logo as 1.6e), then 1.7 and the WP-1 gate.
 
 ### Decisions made since the plan was written
 - Providers stay in-tree behind a `Protocol`; entry points deferred.
