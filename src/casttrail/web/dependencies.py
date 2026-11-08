@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from casttrail.auth.models import User
 from casttrail.auth.service import AuthService
+from casttrail.auth.throttle import ThrottlePolicy
 from casttrail.config import Settings
 from casttrail.web.cookies import read_session_token
 
@@ -57,7 +58,18 @@ def get_auth_service(session: SessionDep, settings: SettingsDep) -> AuthService:
     Returns:
         An auth service bound to the session.
     """
-    return AuthService(session, session_ttl=timedelta(hours=settings.session_ttl_hours))
+    return AuthService(
+        session,
+        session_ttl=timedelta(hours=settings.session_ttl_hours),
+        throttle_policy=ThrottlePolicy(
+            max_failures_per_user=settings.signin_max_failures_per_user,
+            max_failures_per_user_known_device=(
+                settings.signin_max_failures_per_user_known_device
+            ),
+            max_failures_per_ip=settings.signin_max_failures_per_ip,
+            window=timedelta(minutes=settings.signin_window_minutes),
+        ),
+    )
 
 
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
