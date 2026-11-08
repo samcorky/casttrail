@@ -3,8 +3,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 from sqlalchemy import select, text
-from sqlalchemy.exc import IntegrityError
 
+from casttrail.auth.errors import AccountError
 from casttrail.auth.models import AuthSession, User
 from casttrail.auth.service import AuthService
 from casttrail.auth.tokens import hash_token
@@ -54,7 +54,7 @@ async def test_create_user_normalises_the_email_and_hashes_the_password(
 async def test_emails_are_unique_regardless_of_case(auth: AuthService) -> None:
     await auth.create_user(email="a@example.com", display_name="A", password=PASSWORD)
 
-    with pytest.raises(IntegrityError):
+    with pytest.raises(AccountError, match="already in use"):
         await auth.create_user(
             email="A@EXAMPLE.COM", display_name="B", password=PASSWORD
         )
