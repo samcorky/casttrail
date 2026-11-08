@@ -208,3 +208,10 @@ Found while putting a real instance on Tailscale. Both matter again for WP-8.
 - **Unknowns are shown as unknown:** a missing date, place, status or organiser says "unknown" instead of being left blank or guessed. Events with no date come last, never hidden.
 - **Guests:** shown by the source's name with a link to its page. "Confirmed" means the source stated scheduled, "Cancelled" and "Postponed" are only what the source stated, "Listed" means listed with no status, and "No longer listed" (listed first, then these last) is explicitly not a cancellation, with a note on the page. Guests are not yet linked to your watched people; that is WP-4.
 - **Not done:** no filter by date or watched person, and no highlighting of watched people until WP-4 links them.
+
+## WP-3.6: source health (2026-11-08)
+
+- **Page:** `/admin/health` (administrators only, 404 for others) summarises the Rostercon refresh from what is already recorded: conventions stored, the last page read, the last finished refresh and its result, the last success, and failed refreshes in a row. A run still in progress is not judged.
+- **Warnings are plain words:** the last run stopped early (with the reason), some event pages could not be read ("Rostercon may have changed its layout. Stored data was kept."), some pages could not be fetched, some watched people have no single Rostercon page, no refresh has succeeded, or the last success was over 3 days ago. They mean "look at this".
+- **A parse failure keeps old data:** an event page that no longer parses is counted and skipped; nothing is stored, changed or unlisted from it. A test refreshes, then serves unreadable pages, and checks that conventions, guests and their listed flags are unchanged.
+- **Not done:** only Rostercon is covered; Comiconomicon has no refresh yet. There is no push alert for a broken source (WP-6 notifications could add one).

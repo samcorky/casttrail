@@ -1,12 +1,14 @@
 import asyncio
 import json
 import uuid
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from casttrail.auth.errors import AccountError
+from casttrail.discovery.health import rostercon_health
 from casttrail.discovery.schedule import recent_runs, run_in_background
 from casttrail.web.dependencies import (
     AdminServiceDep,
@@ -239,3 +241,23 @@ async def start_refresh(request: Request, admin: CurrentAdmin) -> RedirectRespon
         run_in_background(request.app.state.refresher)
     )
     return RedirectResponse("/admin/refresh?notice=started", status_code=303)
+
+
+@router.get("/health", response_class=HTMLResponse)
+async def source_health(
+    request: Request, admin: CurrentAdmin, session: SessionDep
+) -> Response:
+    """Show how the convention sources are doing.
+
+    Args:
+        request: The current request.
+        admin: The signed-in administrator.
+        session: The request's database session.
+
+    Returns:
+        The page.
+    """
+    sources = [await rostercon_health(session, now=datetime.now(UTC))]
+    return templates.TemplateResponse(
+        request, "admin_health.html", {"user": admin, "sources": sources}
+    )
