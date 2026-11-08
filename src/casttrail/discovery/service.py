@@ -1,0 +1,320 @@
+import hashlib
+import json
+import uuid
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+from sqlalchemy import delete, select
+
+from casttrail.db import utc_now
+from casttrail.discovery.models import (
+    Appearance,
+    AppearanceSource,
+    Convention,
+    ConventionSource,
+    SourceObservation,
+)
+from casttrail.identity.models import ExternalIdentity
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from datetime import datetime
+
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from casttrail.providers.base import ConventionInfo, ListingResult
+
+# Observations kept per page. Older ones are pruned on every ingest.
+KEEP_OBSERVATIONS = 3
+
+# Details that update a stored convention when a source states them. A value the source
+# did not give (``None``) never clears what is already known.
+_DETAIL_FIELDS = (
+    "start_date",
+    "end_date",
+    "venue",
+    "city",
+    "region",
+    "country",
+    "organizer",
+    "status",
+)
+
+
+@dataclass(frozen=True)
+class IngestResult:
+    """What one ingest changed."""
+
+    convention_id: uuid.UUID
+    convention_created: bool
+    guests_added: int
+    guests_unlisted: int
+    # Whether what was parsed differs from the previous observation of this page.
+    changed: bool
+
+
+def content_hash(convention: ConventionInfo, listing: ListingResult) -> str:
+    """Fingerprint what a source said, ignoring the order of its guests.
+
+    Args:
+        convention: The convention as parsed.
+        listing: The guest listing as parsed.
+
+    Returns:
+        A hex SHA-256 digest. The ``etag`` is left out: it is about the transfer, not
+        the content.
+    """
+    payload = {
+        "convention": convention.model_dump(mode="json"),
+        "complete": listing.complete,
+        "guests": sorted(
+            (guest.model_dump(mode="json") for guest in listing.items),
+            key=lambda guest: str(guest["source_key"]),
+        ),
+    }
+    text = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    )
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+class DiscoveryService:
+    """Records what listing sources say about conventions and their guests.
+
+    Ingesting the same thing twice changes nothing. Imported data is untrusted, so:
+    a missing guest is never a cancellation, an incomplete listing never removes
+    anyone, and a link between a guest and a person made by hand is never touched.
+    """
+
+    def __init__(
+        self, session: AsyncSession, *, now: Callable[[], datetime] = utc_now
+    ) -> None:
+        """Create the service.
+
+        Args:
+            session: The database session to work in.
+            now: The clock, replaceable in tests.
+        """
+        self._session = session
+        self._now = now
+
+    async def ingest(
+        self, provider: str, convention: ConventionInfo, listing: ListingResult
+    ) -> IngestResult:
+        """Record one page's convention and guest list, all or nothing.
+
+        Args:
+            provider: The source the page came from.
+            convention: The convention as the source describes it.
+            listing: The guests the source lists for it.
+
+        Returns:
+            What changed.
+        """
+        try:
+            result = await self._ingest(provider, convention, listing)
+            await self._session.commit()
+        except BaseException:
+            await self._session.rollback()
+            raise
+        return result
+
+    async def _ingest(
+        self, provider: str, convention: ConventionInfo, listing: ListingResult
+    ) -> IngestResult:
+        now = self._now()
+        digest = content_hash(convention, listing)
+        previous = await self._session.scalar(
+            select(SourceObservation.content_hash)
+            .where(
+                SourceObservation.provider == provider,
+                SourceObservation.source_key == convention.source_key,
+            )
+            .order_by(SourceObservation.fetched_at.desc())
+            .limit(1)
+        )
+        stored, created = await self._upsert_convention(provider, convention, now)
+        added, seen = await self._upsert_guests(provider, stored, listing, now)
+        unlisted = await self._unlist_missing(provider, stored, listing, seen)
+        self._session.add(
+            SourceObservation(
+                provider=provider,
+                source_key=convention.source_key,
+                content_hash=digest,
+                complete=listing.complete,
+                fetched_at=now,
+            )
+        )
+        await self._session.flush()
+        await self._prune(provider, convention.source_key)
+        return IngestResult(
+            convention_id=stored.id,
+            convention_created=created,
+            guests_added=added,
+            guests_unlisted=unlisted,
+            changed=previous != digest,
+        )
+
+    async def _upsert_convention(
+        self, provider: str, info: ConventionInfo, now: datetime
+    ) -> tuple[Convention, bool]:
+        source = await self._session.scalar(
+            select(ConventionSource).where(
+                ConventionSource.provider == provider,
+                ConventionSource.source_key == info.source_key,
+            )
+        )
+        if source is None:
+            convention = Convention(
+                name=info.name,
+                created_at=now,
+                updated_at=now,
+                **{field: getattr(info, field) for field in _DETAIL_FIELDS},
+            )
+            self._session.add(convention)
+            await self._session.flush()
+            self._session.add(
+                ConventionSource(
+                    convention_id=convention.id,
+                    provider=provider,
+                    source_key=info.source_key,
+                    source_url=info.source_url,
+                    first_seen_at=now,
+                    last_seen_at=now,
+                )
+            )
+            return convention, True
+        convention = await self._session.get_one(Convention, source.convention_id)
+        changed = convention.name != info.name
+        convention.name = info.name
+        for field in _DETAIL_FIELDS:
+            value = getattr(info, field)
+            if value is not None and getattr(convention, field) != value:
+                setattr(convention, field, value)
+                changed = True
+        if changed:
+            convention.updated_at = now
+        source.source_url = info.source_url
+        source.last_seen_at = now
+        return convention, False
+
+    async def _upsert_guests(
+        self,
+        provider: str,
+        convention: Convention,
+        listing: ListingResult,
+        now: datetime,
+    ) -> tuple[int, set[uuid.UUID]]:
+        """Record each listed guest: how many were new, and which are listed."""
+        keys = [guest.source_key for guest in listing.items]
+        identities = {
+            identity.external_id: identity
+            for identity in await self._session.scalars(
+                select(ExternalIdentity).where(
+                    ExternalIdentity.provider == provider,
+                    ExternalIdentity.external_id.in_(keys),
+                )
+            )
+        }
+        added = 0
+        listed: set[uuid.UUID] = set()
+        for guest in listing.items:
+            identity = identities.get(guest.source_key)
+            if identity is None:
+                identity = ExternalIdentity(
+                    provider=provider,
+                    external_id=guest.source_key,
+                    display_name=guest.name,
+                )
+                self._session.add(identity)
+                await self._session.flush()
+            elif identity.display_name != guest.name:
+                # The name is the source's word. ``person_id`` is never touched here.
+                identity.display_name = guest.name
+            listed.add(identity.id)
+
+            appearance = await self._session.scalar(
+                select(Appearance).where(
+                    Appearance.convention_id == convention.id,
+                    Appearance.external_identity_id == identity.id,
+                )
+            )
+            if appearance is None:
+                appearance = Appearance(
+                    convention_id=convention.id,
+                    external_identity_id=identity.id,
+                    created_at=now,
+                )
+                self._session.add(appearance)
+                await self._session.flush()
+                added += 1
+
+            line = await self._session.scalar(
+                select(AppearanceSource).where(
+                    AppearanceSource.appearance_id == appearance.id,
+                    AppearanceSource.provider == provider,
+                )
+            )
+            if line is None:
+                self._session.add(
+                    AppearanceSource(
+                        appearance_id=appearance.id,
+                        provider=provider,
+                        source_url=guest.source_url,
+                        listed=True,
+                        status=guest.status,
+                        first_seen_at=now,
+                        last_seen_at=now,
+                    )
+                )
+            else:
+                line.source_url = guest.source_url
+                line.listed = True
+                line.last_seen_at = now
+                if guest.status is not None:
+                    line.status = guest.status
+        return added, listed
+
+    async def _unlist_missing(
+        self,
+        provider: str,
+        convention: Convention,
+        listing: ListingResult,
+        listed: set[uuid.UUID],
+    ) -> int:
+        """Mark guests this source no longer lists, but only from a complete listing."""
+        if not listing.complete:
+            return 0
+        lines = await self._session.scalars(
+            select(AppearanceSource)
+            .join(Appearance, Appearance.id == AppearanceSource.appearance_id)
+            .where(
+                Appearance.convention_id == convention.id,
+                AppearanceSource.provider == provider,
+                AppearanceSource.listed.is_(True),
+                Appearance.external_identity_id.not_in(listed),
+            )
+        )
+        count = 0
+        for line in lines:
+            line.listed = False
+            count += 1
+        return count
+
+    async def _prune(self, provider: str, source_key: str) -> None:
+        keep = (
+            select(SourceObservation.id)
+            .where(
+                SourceObservation.provider == provider,
+                SourceObservation.source_key == source_key,
+            )
+            .order_by(SourceObservation.fetched_at.desc(), SourceObservation.id)
+            .limit(KEEP_OBSERVATIONS)
+        )
+        await self._session.execute(
+            delete(SourceObservation).where(
+                SourceObservation.provider == provider,
+                SourceObservation.source_key == source_key,
+                SourceObservation.id.not_in(keep),
+            )
+        )

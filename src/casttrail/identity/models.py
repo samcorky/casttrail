@@ -21,6 +21,8 @@ class ExternalIdentity(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     provider: Mapped[str] = mapped_column(String(50))
     external_id: Mapped[str] = mapped_column(String(255))
+    # The name the source gives, so an unmatched guest can still be shown by name.
+    display_name: Mapped[str | None] = mapped_column(String(200))
     person_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("people.id", ondelete="SET NULL"), index=True
     )
