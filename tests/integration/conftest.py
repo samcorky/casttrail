@@ -5,7 +5,9 @@ import pytest
 from alembic import command
 from alembic.config import Config
 
-import casttrail.auth.models  # noqa: F401
+import casttrail.auth.models
+import casttrail.catalogue.models
+import casttrail.identity.models  # noqa: F401
 from casttrail.config import Settings  # noqa: TC001  (pytest resolves fixture types)
 from casttrail.db import Base, create_engine, create_session_factory
 

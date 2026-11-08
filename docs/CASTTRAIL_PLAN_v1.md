@@ -223,7 +223,7 @@ Revisit these only after WP-8, each as its own slice.
 
 ### WP-2 Watchlist
 - [x] 2.1 TMDB provider with fixtures, `Protocol` in `providers/base.py` 🧪
-- [ ] 2.2 `people`, `productions`, `credits`, `external_identities` 🗄️
+- [x] 2.2 `people`, `productions`, `credits`, `external_identities` 🗄️
 - [ ] 2.3 Search UI (HTMX) for people, films and series
 - [ ] 2.4 `watches` + watch and unwatch, per-user isolation 🗄️ 🧪
 - [ ] 2.5 Franchises with the Bond seed and franchise watches 🗄️ 👁️ DEMO
