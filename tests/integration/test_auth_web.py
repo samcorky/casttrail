@@ -311,3 +311,49 @@ def test_locking_one_account_does_not_lock_another(web_settings: Settings) -> No
         )
 
         assert other.status_code == 303
+
+
+def test_signing_in_sets_a_long_lived_device_cookie_that_survives_sign_out(
+    client: TestClient,
+) -> None:
+    response = client.post(
+        "/login", data={"email": "a@example.com", "password": PASSWORD}
+    )
+
+    cookies = response.headers.get_list("set-cookie")
+    device = next(c for c in cookies if c.startswith("casttrail-device="))
+    assert "HttpOnly" in device
+    assert "SameSite=lax" in device
+    assert f"Max-Age={365 * 86400}" in device
+
+    out = client.post("/logout")
+    assert all(
+        not c.startswith("casttrail-device=")
+        for c in out.headers.get_list("set-cookie")
+    )
+    assert "casttrail-device" in client.cookies
+
+
+def test_a_known_browser_can_sign_in_while_others_are_locked_out(
+    web_settings: Settings,
+) -> None:
+    with (
+        TestClient(
+            _app(web_settings), follow_redirects=False, headers=SAME_ORIGIN
+        ) as owner,
+        TestClient(
+            _app(web_settings), follow_redirects=False, headers=SAME_ORIGIN
+        ) as attacker,
+    ):
+        _sign_in(owner)
+        owner.post("/logout")
+        for _ in range(5):
+            attacker.post("/login", data={"email": "a@example.com", "password": "nope"})
+        blocked = attacker.post(
+            "/login", data={"email": "a@example.com", "password": PASSWORD}
+        )
+        assert blocked.status_code == 429
+
+        _sign_in(owner)
+
+        assert owner.get("/whoami").status_code == 200

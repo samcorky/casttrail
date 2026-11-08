@@ -1,10 +1,10 @@
+import uuid
 from dataclasses import dataclass, field
-from datetime import timedelta
 from typing import TYPE_CHECKING
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, select
 
-from casttrail.auth.models import AuthSession, User
+from casttrail.auth.models import AuthSession, KnownDevice, User
 from casttrail.auth.passwords import DUMMY_HASH, hash_password, verify_password
 from casttrail.auth.throttle import SignInThrottle, ThrottlePolicy
 from casttrail.auth.tokens import hash_token, new_token
@@ -12,12 +12,13 @@ from casttrail.db import utc_now
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from datetime import datetime
+    from datetime import datetime, timedelta
 
     from sqlalchemy.ext.asyncio import AsyncSession
 
-# How long a session row, even an ended or expired one, remembers its client address.
-KNOWN_ADDRESS_RETENTION = timedelta(days=90)
+# Looked up when the email is unknown, so an unknown email runs the same queries as a
+# real one and cannot be told apart by what the server does.
+_NO_USER = uuid.UUID(int=0)
 
 
 def normalise_email(email: str) -> str:
@@ -34,10 +35,12 @@ def normalise_email(email: str) -> str:
 
 @dataclass(frozen=True, kw_only=True)
 class SignedIn:
-    """A user and the secret token of the session just started for them."""
+    """A user and the secret tokens of the session just started for them."""
 
     user: User
     token: str = field(repr=False)
+    # The long-lived device cookie value to (re)set in the browser.
+    device_token: str = field(repr=False)
 
 
 class AuthService:
@@ -100,6 +103,7 @@ class AuthService:
         *,
         user_agent: str | None = None,
         client_ip: str | None = None,
+        device_token: str | None = None,
     ) -> SignedIn | None:
         """Check credentials and start a session.
 
@@ -113,9 +117,10 @@ class AuthService:
             password: The plain-text password.
             user_agent: The browser's user agent, kept for the user's session list.
             client_ip: The client address.
+            device_token: The device cookie the browser sent, if any.
 
         Returns:
-            The user and session token, or ``None`` if sign-in is refused.
+            The user and tokens, or ``None`` if sign-in is refused.
 
         Raises:
             SignInThrottledError: If there have been too many recent failures.
@@ -129,13 +134,13 @@ class AuthService:
         # could all pass the check before any of them recorded a failure
         # (tests/integration/test_signin_throttle.py proves this).
         user = await self._session.scalar(select(User).where(User.email == address))
-        # An address this user has signed in from before is not locked out of their
-        # own account by someone else's failed guesses; the per-address limit still
-        # applies to it. It only ever matches the real user, so it reveals nothing.
-        known_address = user is not None and await self._is_known_address(
-            user, client_ip
+        # A browser holding this account's device cookie gets a higher, still finite,
+        # per-email limit, so someone else's guesses cannot easily lock the real user
+        # out. The lookup runs for unknown emails too, so it reveals nothing.
+        known_device = await self._is_known_device(
+            user.id if user else _NO_USER, device_token
         )
-        await throttle.check(address, client_ip, exempt_user_limit=known_address)
+        await throttle.check(address, client_ip, known_device=known_device)
 
         if user is None:
             verify_password(password, DUMMY_HASH)
@@ -150,9 +155,7 @@ class AuthService:
 
         await throttle.clear(address)
         await self._session.execute(
-            delete(AuthSession).where(
-                AuthSession.expires_at < now - KNOWN_ADDRESS_RETENTION
-            )
+            delete(AuthSession).where(AuthSession.expires_at < now)
         )
         token = new_token()
         self._session.add(
@@ -165,8 +168,17 @@ class AuthService:
                 client_ip=client_ip,
             )
         )
+        if known_device and device_token is not None:
+            device = device_token
+        else:
+            device = new_token()
+            self._session.add(
+                KnownDevice(
+                    user_id=user.id, token_hash=hash_token(device), created_at=now
+                )
+            )
         await self._session.commit()
-        return SignedIn(user=user, token=token)
+        return SignedIn(user=user, token=token, device_token=device)
 
     async def authenticate(self, token: str) -> User | None:
         """Find the active user a session token belongs to.
@@ -192,28 +204,39 @@ class AuthService:
     async def sign_out(self, token: str) -> None:
         """End the session a token belongs to.
 
-        The row is expired rather than deleted, so the address stays known to the
-        sign-in throttle for ``KNOWN_ADDRESS_RETENTION``.
+        The device cookie is left alone: signing out is not forgetting the browser.
 
         Args:
             token: The secret token from the cookie.
         """
         await self._session.execute(
-            update(AuthSession)
-            .where(
-                AuthSession.token_hash == hash_token(token),
-                AuthSession.expires_at > self._now(),
-            )
-            .values(expires_at=self._now())
+            delete(AuthSession).where(AuthSession.token_hash == hash_token(token))
         )
         await self._session.commit()
 
-    async def _is_known_address(self, user: User, client_ip: str | None) -> bool:
-        if client_ip is None:
+    async def forget_devices(self, user_id: uuid.UUID) -> None:
+        """Forget every remembered browser for an account.
+
+        To be called when the password changes or is reset, or the account's sessions
+        are revoked, so a device cookie from before cannot keep its higher limit.
+
+        Args:
+            user_id: The account.
+        """
+        await self._session.execute(
+            delete(KnownDevice).where(KnownDevice.user_id == user_id)
+        )
+        await self._session.commit()
+
+    async def _is_known_device(
+        self, user_id: uuid.UUID, device_token: str | None
+    ) -> bool:
+        if device_token is None:
             return False
         found = await self._session.scalar(
-            select(AuthSession.id)
-            .where(AuthSession.user_id == user.id, AuthSession.client_ip == client_ip)
-            .limit(1)
+            select(KnownDevice.id).where(
+                KnownDevice.user_id == user_id,
+                KnownDevice.token_hash == hash_token(device_token),
+            )
         )
         return found is not None

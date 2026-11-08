@@ -6,7 +6,9 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from casttrail.auth.throttle import SignInThrottledError
 from casttrail.web.cookies import (
     clear_session_cookie,
+    read_device_token,
     read_session_token,
+    set_device_cookie,
     set_session_cookie,
 )
 from casttrail.web.dependencies import AuthServiceDep, CurrentUserOptional, SettingsDep
@@ -62,6 +64,7 @@ async def login(
             password,
             user_agent=request.headers.get("user-agent"),
             client_ip=request.client.host if request.client else None,
+            device_token=read_device_token(request, settings),
         )
     except SignInThrottledError as error:
         return templates.TemplateResponse(
@@ -77,6 +80,7 @@ async def login(
         )
     response = RedirectResponse("/", status_code=303)
     set_session_cookie(request, response, signed_in.token, settings)
+    set_device_cookie(request, response, signed_in.device_token, settings)
     return response
 
 

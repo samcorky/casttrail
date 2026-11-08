@@ -17,8 +17,12 @@ def _secure(request: Request, settings: Settings) -> bool:
     return request.url.scheme == "https"
 
 
+def _name(request: Request, settings: Settings, base: str) -> str:
+    return _HOST_PREFIX + base if _secure(request, settings) else base
+
+
 def session_cookie_name(request: Request, settings: Settings) -> str:
-    """Return the cookie name, prefixed when the cookie is Secure.
+    """Return the session cookie's name, prefixed when the cookie is Secure.
 
     Args:
         request: The current request.
@@ -27,26 +31,29 @@ def session_cookie_name(request: Request, settings: Settings) -> str:
     Returns:
         ``__Host-Http-<name>`` when Secure, else the plain configured name.
     """
-    if _secure(request, settings):
-        return _HOST_PREFIX + settings.cookie_name
-    return settings.cookie_name
+    return _name(request, settings, settings.cookie_name)
 
 
-def read_session_token(request: Request, settings: Settings) -> str | None:
-    """Return the session token from the cookie, strictly.
-
-    A missing, duplicated or disguised cookie gives ``None``. A disguised cookie has
-    a name that only equals the real one once Unicode spaces are trimmed, which
-    Starlette's own parser does; a planted copy must not be read as the real one.
+def device_cookie_name(request: Request, settings: Settings) -> str:
+    """Return the device cookie's name, prefixed when the cookie is Secure.
 
     Args:
         request: The current request.
         settings: The application settings.
 
     Returns:
-        The token, or ``None``.
+        ``__Host-Http-<name>`` when Secure, else the plain configured name.
     """
-    name = session_cookie_name(request, settings)
+    return _name(request, settings, settings.device_cookie_name)
+
+
+def _read(request: Request, name: str) -> str | None:
+    """Return the value of the one cookie called ``name``, strictly.
+
+    A missing, duplicated or disguised cookie gives ``None``. A disguised cookie has
+    a name that only equals the real one once Unicode spaces are trimmed, which
+    Starlette's own parser does; a planted copy must not be read as the real one.
+    """
     found: list[str] = []
     for header in request.headers.getlist("cookie"):
         for chunk in header.split(";"):
@@ -57,6 +64,32 @@ def read_session_token(request: Request, settings: Settings) -> str | None:
             elif key.strip() == name:
                 return None
     return found[0] if len(found) == 1 else None
+
+
+def read_session_token(request: Request, settings: Settings) -> str | None:
+    """Return the session token from the cookie, strictly.
+
+    Args:
+        request: The current request.
+        settings: The application settings.
+
+    Returns:
+        The token, or ``None``.
+    """
+    return _read(request, session_cookie_name(request, settings))
+
+
+def read_device_token(request: Request, settings: Settings) -> str | None:
+    """Return the device token from the cookie, strictly.
+
+    Args:
+        request: The current request.
+        settings: The application settings.
+
+    Returns:
+        The token, or ``None``.
+    """
+    return _read(request, device_cookie_name(request, settings))
 
 
 def set_session_cookie(
@@ -84,10 +117,32 @@ def set_session_cookie(
     )
 
 
+def set_device_cookie(
+    request: Request, response: Response, token: str, settings: Settings
+) -> None:
+    """Set the long-lived cookie that marks this browser as known to the account.
+
+    Args:
+        request: The current request.
+        response: The response to attach the cookie to.
+        token: The secret device token.
+        settings: The application settings.
+    """
+    response.set_cookie(
+        device_cookie_name(request, settings),
+        token,
+        max_age=settings.device_ttl_days * 86400,
+        path="/",
+        secure=_secure(request, settings),
+        httponly=True,
+        samesite="lax",
+    )
+
+
 def clear_session_cookie(
     request: Request, response: Response, settings: Settings
 ) -> None:
-    """Expire the session cookie.
+    """Expire the session cookie. The device cookie is kept.
 
     Args:
         request: The current request.

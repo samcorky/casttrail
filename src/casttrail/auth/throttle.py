@@ -16,6 +16,9 @@ class ThrottlePolicy:
     """How many failed sign-ins are tolerated before refusing further attempts."""
 
     max_failures_per_user: int = 5
+    # The per-email limit for a browser that has signed in to the account before.
+    # Higher, but finite, so a stolen device cookie is not a free pass.
+    max_failures_per_user_known_device: int = 20
     max_failures_per_ip: int = 20
     window: timedelta = timedelta(minutes=15)
 
@@ -84,15 +87,15 @@ class SignInThrottle:
         email: str,
         client_ip: str | None,
         *,
-        exempt_user_limit: bool = False,
+        known_device: bool = False,
     ) -> None:
         """Refuse the attempt if either counter is over its limit.
 
         Args:
             email: The normalised email being tried.
             client_ip: The client address, if known.
-            exempt_user_limit: Skip the per-email limit, for an address the account
-                has signed in from before. The per-address limit still applies.
+            known_device: Whether the browser holds a valid device cookie for this
+                account, which raises the per-email limit.
 
         Raises:
             SignInThrottledError: If the email or the address has too many recent
@@ -103,11 +106,12 @@ class SignInThrottle:
                 SignInAttempt.attempted_at <= self._now - self._policy.window
             )
         )
-        over_user = (
-            not exempt_user_limit
-            and await self._failures(_user_key(email))
-            >= self._policy.max_failures_per_user
+        user_limit = (
+            self._policy.max_failures_per_user_known_device
+            if known_device
+            else self._policy.max_failures_per_user
         )
+        over_user = await self._failures(_user_key(email)) >= user_limit
         over_ip = (
             client_ip is not None
             and await self._failures(_ip_key(client_ip))

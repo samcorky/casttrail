@@ -63,6 +63,9 @@ def get_auth_service(session: SessionDep, settings: SettingsDep) -> AuthService:
         session_ttl=timedelta(hours=settings.session_ttl_hours),
         throttle_policy=ThrottlePolicy(
             max_failures_per_user=settings.signin_max_failures_per_user,
+            max_failures_per_user_known_device=(
+                settings.signin_max_failures_per_user_known_device
+            ),
             max_failures_per_ip=settings.signin_max_failures_per_ip,
             window=timedelta(minutes=settings.signin_window_minutes),
         ),

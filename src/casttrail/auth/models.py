@@ -46,3 +46,22 @@ class SignInAttempt(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     key_hash: Mapped[str] = mapped_column(String(64), index=True)
     attempted_at: Mapped[datetime] = mapped_column(UtcDateTime)
+
+
+class KnownDevice(Base):
+    """A browser that has signed in to an account, remembered by a long-lived cookie.
+
+    Only the hash of the cookie's secret is stored. A browser holding a valid one gets
+    a higher sign-in failure limit, so someone else's guesses cannot easily lock the
+    real user out. It depends on nothing about the network, and an attacker without
+    the cookie sees the same behaviour for every email, existing or not.
+    """
+
+    __tablename__ = "known_devices"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime)
