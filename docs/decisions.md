@@ -113,3 +113,13 @@ Other choices: a person has at most one credit per production (the writer picks 
 - **Isolation:** every read and delete takes the user's id. Another user's watch and one that does not exist give the same 404 page. Redirects after a watch go only to `search` or `watchlist`, never to an address from the form.
 - **Not done yet:** a film or series watch does nothing until events exist (WP-3) and matching (WP-4). `credits` is still unfilled; the top-billed expansion in WP-6 will fill it.
 - **Known:** an admin's navigation now wraps onto a second line just above the 768 px breakpoint. Revisit if more links are added.
+
+## WP-3.1: Rostercon event page parser (2026-11-08)
+
+- **Scope:** `providers/rostercon.py` is a pure parser: HTML in, data out, no network and no database. Fetching, the sitemap and scheduling come in 3.3 and 3.4.
+- **Source of truth is the page's `Event` JSON-LD**, read with the standard library only (no bs4). It gives name, dates, venue, city, region, organiser, status and the performer list.
+- **`complete` is `True` only when the guest list is whole and understood.** It is `False` when the page has no event, the performer list is missing or the wrong type, or any guest has no name or a link that is not an `https://www.rostercon.com/en/people/<slug>` address. A guest missing from an incomplete listing says nothing about whether they still attend; core must not remove or flag anyone unless `complete` is `True`. An empty performer list is a complete empty listing, but a missing one is not, because that is also how a changed page looks.
+- **Status:** only the source's own `EventCancelled` becomes `cancelled`. A missing or unrecognised status is `None`, never cancelled. `EventPostponed` and `EventRescheduled` are mapped to `postponed` from the schema.org names; no real postponed page has been seen yet.
+- **Country comes from the location URL** (`/en/location/united-kingdom/...`), because `addressCountry` is written in French ("Royaume-Uni"). Callers should compare against the slug `united-kingdom`.
+- **Links from outside are checked** (https, Rostercon's own host, the expected path, a single slug) before they become a guest key or a stored address.
+- **Not done:** no `attendance_days` or autograph fields, because Rostercon gives none. No cross-check of the JSON-LD against the visible guest tiles; the saved fixtures hold only the JSON-LD, so that check could not be tested. Add it when real pages are fetched.

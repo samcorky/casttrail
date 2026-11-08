@@ -230,7 +230,7 @@ Revisit these only after WP-8, each as its own slice.
 - [x] ⛔ GATE: watches survive restart, 404 on another user's watch (met by 2.4; 2.5 is deferred)
 
 ### WP-3 Event browser
-- [ ] 3.1 Provider 1 parser against fixtures, `ListingResult.complete` logic 🧪
+- [x] 3.1 Provider 1 parser against fixtures, `ListingResult.complete` logic 🧪 (Rostercon event page parser only; fetching and discovery come in 3.3 and 3.4)
 - [ ] 3.2 Convention, source, observation and appearance tables 🗄️
 - [ ] 3.3 Discovery service: idempotent upsert, provenance, prune observations 🧪
 - [ ] 3.4 `job_runs`, non-overlapping lock, scheduler, manual refresh

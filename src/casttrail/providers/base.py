@@ -1,3 +1,4 @@
+from datetime import date
 from typing import TYPE_CHECKING, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict
@@ -6,6 +7,7 @@ if TYPE_CHECKING:
     from datetime import timedelta
 
 MediaType = Literal["movie", "tv"]
+EventStatus = Literal["scheduled", "cancelled", "postponed"]
 
 
 class ProviderError(Exception):
@@ -69,6 +71,50 @@ class PersonCredit(_Data):
     production: Production
     character: str | None = None
     order: int | None = None
+
+
+class ConventionInfo(_Data):
+    """One convention as a listing source describes it.
+
+    ``None`` means the source did not say. A missing status is never a cancellation:
+    only ``status="cancelled"``, stated by the source, is one.
+    """
+
+    source_key: str
+    name: str
+    source_url: str
+    start_date: date | None = None
+    end_date: date | None = None
+    venue: str | None = None
+    city: str | None = None
+    region: str | None = None
+    country: str | None = None
+    organizer: str | None = None
+    status: EventStatus | None = None
+
+
+class GuestObservation(_Data):
+    """One guest a source lists for a convention."""
+
+    source_key: str
+    name: str
+    source_url: str
+    identifiers: dict[str, str] = {}
+    status: EventStatus | None = None
+
+
+class ListingResult(_Data):
+    """The guests a source listed for a convention at one moment.
+
+    ``complete`` is ``True`` only when the whole listing was fetched and understood.
+    Anything less (a partial fetch, a page that no longer parses, an HTTP error) is
+    ``False``, and the caller must then keep what it already knows: a guest missing
+    from an incomplete listing says nothing about whether they are still attending.
+    """
+
+    items: list[GuestObservation]
+    complete: bool
+    etag: str | None = None
 
 
 class MetadataProvider(Protocol):
