@@ -20,7 +20,7 @@ async def _users_page(
     form: dict[str, str] | None = None,
 ) -> Response:
     context = {
-        "admin": admin,
+        "user": admin,
         "users": await service.list_users(),
         "error": error,
         "form": form or {},

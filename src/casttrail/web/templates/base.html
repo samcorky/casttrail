@@ -11,7 +11,22 @@
   <body>
     <header class="container">
       <nav aria-label="Main navigation">
-        <ul><li><strong>CastTrail</strong></li></ul>
+        <ul><li><a href="/" class="contrast"><strong>CastTrail</strong></a></li></ul>
+        {% if user %}
+        {% set path = request.url.path %}
+        <ul>
+          <li><a href="/"{% if path == "/" %} aria-current="page"{% endif %}>Dashboard</a></li>
+          {% if user.is_admin %}
+          <li><a href="/admin/users"{% if path.startswith("/admin") %} aria-current="page"{% endif %}>Users</a></li>
+          {% endif %}
+          <li><a href="/status"{% if path == "/status" %} aria-current="page"{% endif %}>Status</a></li>
+          <li>
+            <form method="post" action="/logout">
+              <button type="submit" class="outline secondary">Sign out ({{ user.display_name }})</button>
+            </form>
+          </li>
+        </ul>
+        {% endif %}
       </nav>
     </header>
     <main class="container" id="main-content">

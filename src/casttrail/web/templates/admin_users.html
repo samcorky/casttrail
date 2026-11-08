@@ -18,7 +18,7 @@
       <td>{{ "Active" if u.is_active else "Disabled" }}</td>
       <td>
         {% if u.is_active %}
-          {% if u.id != admin.id %}
+          {% if u.id != user.id %}
           <form method="post" action="/admin/users/{{ u.id }}/disable">
             <button type="submit" class="secondary">Disable</button>
           </form>
