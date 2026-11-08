@@ -207,13 +207,13 @@ Revisit these only after WP-8, each as its own slice.
 - [x] 1.4 `users` + `sessions` tables, argon2 hashing, login and logout, hashed server-side sessions, strict cookies 🗄️ 🧪
 - [x] 1.5a CSRF by `Sec-Fetch-Site`/`Origin` on every unsafe method, login included (done with 1.4) 🧪
 - [x] 1.5b Login throttle per username and IP, plus a device cookie giving known browsers a higher, finite per-account limit (PR #7) 🗄️ 🧪
-- [ ] 1.6a Admin bootstrap from env (no default credentials), first-run only 🧪
-- [ ] 1.6b Admin user management pages: create, disable and enable, make admin 🧪
-- [ ] 1.6c Private dashboard and navigation; two users see separate pages 👁️ DEMO
-- [ ] 1.6d Change password: ends other sessions and calls `AuthService.forget_devices` 🧪
-- [ ] 1.6e Logo, favicon and app icons (SVG source, 192 and 512 PNG, one maskable) in `web/static/img/`, shown in the nav and on the sign-in page; fixes the `/favicon.ico` 404 👁️ DEMO
-- [ ] 1.7 Extend the architecture tests as packages appear (providers, identity, matching)
-- [ ] ⛔ GATE: two users are isolated, 95% coverage on `auth/`
+- [x] 1.6a Admin bootstrap from env (no default credentials), first-run only 🧪
+- [x] 1.6b Admin user management pages: create, disable and enable, make admin 🧪
+- [x] 1.6c Private dashboard and navigation; two users see separate pages 👁️ DEMO
+- [x] 1.6d Change password: ends other sessions and calls `AuthService.forget_devices` 🧪
+- [x] 1.6e Logo, favicon and app icons (SVG source, 192 and 512 PNG, one maskable) in `web/static/img/`, shown in the nav and on the sign-in page; fixes the `/favicon.ico` 404 👁️ DEMO
+- [x] 1.7 Extend the architecture tests as packages appear (providers, identity, matching)
+- [x] ⛔ GATE: two users are isolated, 95% coverage on `auth/` (185 tests, `auth/` at 100%)
 
 ### WP-2 Watchlist
 - [ ] 2.1 TMDB provider with fixtures, `Protocol` in `providers/base.py` 🧪
@@ -273,18 +273,23 @@ Revisit these only after WP-8, each as its own slice.
 
 ## 12. Status and handoff
 
-**As of 2026-11-08.** `main` is at PR #7. Local `uv run poe check` passes with 118 tests and about 99.8% coverage, and the 95% gate on `auth/` is met.
+**As of 2026-11-08.** WP-0 and WP-1 are done. `uv run poe check` passes on `main` with 185 tests and about 99.9% coverage, and `auth/` is at 100% against the 95% gate. The WP-1 gate has not been formally reviewed by the project owner yet.
 
-### Done (WP-1, chunks 1.1 to 1.5)
+### Done (WP-0, and WP-1 chunks 1.1 to 1.7)
 - Tooling and CI: Ruff, strict mypy, pytest with branch coverage, archunitpython architecture tests, pytest-alembic, prek hooks, `CI passed` and `Hooks: prek (autofix)` as the required checks. `main` is protected and PR-only, squash merge, auto-merge allowed.
 - App shell: `create_app()`, `/health`, status page, local Pico and HTMX.
 - Database: async SQLite (WAL, `BEGIN IMMEDIATE`), Alembic, migrations 0001 to 0004 (baseline, users and sessions, sign-in attempts, known devices).
 - Auth: Argon2id passwords, hashed server-side sessions, strict cookie reader, `SameSite=Lax`, `__Host-Http-` prefix when Secure, CSRF check on every unsafe method, login throttle (5 per email, 20 per address, 15 minute window), device cookie raising the per-account limit to 20 for a known browser.
+- Admin and accounts: first admin from `CASTTRAIL_ADMIN_EMAIL` and `CASTTRAIL_ADMIN_PASSWORD` only on an empty `users` table, admin pages at `/admin/users` (add, disable, enable, make admin; 404 for non-admins; no self-disable and no admin removal), private dashboard at `/`, navigation, change password at `/account/password`.
+- Passwords are 12 to 256 characters when set. Changing one ends every other session, forgets remembered browsers, and counts wrong guesses at the current password towards the sign-in throttle.
+- Public `/status` shows version and DB revision (it must work before login and before migration). `/health` discloses nothing.
+- Logo, icons and favicon in `web/static/img/` (the icon set is ready for the optional PWA).
+- Architecture rules cover `auth`, `identity` and `matching` (framework-free), `providers` (no database, auth or web), and a ban on `requests` and `httpx` by import scan.
 - Renovate configured and running (autofix.ci app also installed).
 
 ### Next
-1. **WP-0 is done** (see `docs/decisions.md`): Rostercon is primary, Comiconomicon secondary, neither grants explicit permission to scrape, and both parse from saved fixtures. Open: where Rostercon shows a cancelled guest (WP-3), and Rostercon returns 503 under load, so use a slow rate and a cache.
-2. Chunk 1.6 (a to e, with the logo as 1.6e), then 1.7 and the WP-1 gate.
+1. **WP-1 gate review**, then WP-2 (Watchlist), starting with the TMDB provider (2.1). The TMDB API key and how it is configured are not decided yet.
+2. WP-0 findings that matter later (see `docs/decisions.md`): Rostercon is primary and Comiconomicon secondary, neither grants explicit permission to scrape, and both parse from saved fixtures. Open: where Rostercon shows a cancelled guest (WP-3), and Rostercon returns 503 under load, so use a slow rate and a cache.
 
 ### Decisions made since the plan was written
 - Providers stay in-tree behind a `Protocol`; entry points deferred.
@@ -296,9 +301,12 @@ Revisit these only after WP-8, each as its own slice.
 - Architecture rules are archunitpython tests, not Import Linter.
 
 ### Open items and reminders
-- `AuthService.forget_devices` exists but is not called anywhere yet. Chunk 1.6d must call it on password change, and any later password reset or session revocation must too.
+- `AuthService.forget_devices` is now called on password change and when an admin disables an account. Any later password reset or session revocation must call it too.
 - Client address comes from `request.client.host`. Behind a reverse proxy it needs a trusted-proxy setting (WP-8), or the per-address limit is shared by everyone.
-- `sessions.client_ip` and `user_agent` are stored but no page shows them yet. A sessions page grouped by browser is a candidate for after 1.6.
+- `sessions.client_ip` and `user_agent` are stored but no page shows them yet. A sessions page grouped by browser is a candidate now that 1.6 is done.
+- There is no password reset (an admin cannot set another user's password yet) and no way to remove admin rights. Both were left out on purpose; add them when needed.
+- Polish noted in the 1.6c demo: the Sign out button in the nav is heavier than the links beside it, and the Users table buttons are large.
+- The `/status` page has no navigation, only a link back to the dashboard.
 - Renovate PR #9 (Python 3.15 interpreter) is open and blocked. Hold it until there is more code to test against.
 - Menagerist issues raised from this work: #297 (Renovate automerge settings, milestone v0.2026.11.3) and #312 (device cookie and device-grouped sessions, milestone Identity and ownership).
 - PyCharm exports `VIRTUAL_ENV` pointing at a stray `venv/` folder, which makes uv warn. Repoint the interpreter to `.venv` and delete `venv/`.
