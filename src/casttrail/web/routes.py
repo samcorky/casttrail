@@ -7,7 +7,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from casttrail import get_version
 from casttrail.db import current_revision
 from casttrail.web import WEB_DIR
-from casttrail.web.dependencies import SessionDep
+from casttrail.web.dependencies import CurrentUser, SessionDep
 
 router = APIRouter()
 templates = Jinja2Templates(directory=WEB_DIR / "templates")
@@ -33,8 +33,22 @@ async def health(session: SessionDep, response: Response) -> dict[str, str]:
 
 
 @router.get("/", response_class=HTMLResponse)
-async def home(request: Request, session: SessionDep) -> HTMLResponse:
-    """Render the home and status page.
+async def dashboard(request: Request, user: CurrentUser) -> HTMLResponse:
+    """Render the signed-in user's own dashboard.
+
+    Args:
+        request: The current request.
+        user: The signed-in user.
+
+    Returns:
+        The rendered page.
+    """
+    return templates.TemplateResponse(request, "dashboard.html", {"user": user})
+
+
+@router.get("/status", response_class=HTMLResponse)
+async def status(request: Request, session: SessionDep) -> HTMLResponse:
+    """Render the status page. It works before login and before migration.
 
     Args:
         request: The current request.
@@ -47,4 +61,4 @@ async def home(request: Request, session: SessionDep) -> HTMLResponse:
         "version": get_version(),
         "revision": await current_revision(session),
     }
-    return templates.TemplateResponse(request, "home.html", context)
+    return templates.TemplateResponse(request, "status.html", context)

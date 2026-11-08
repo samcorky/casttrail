@@ -42,18 +42,18 @@ def test_health_returns_503_when_the_database_is_unavailable(
     assert response.json() == {"status": "unavailable"}
 
 
-def test_home_page_renders_status_and_version(client: TestClient) -> None:
-    response = client.get("/")
+def test_status_page_renders_status_and_version(client: TestClient) -> None:
+    response = client.get("/status")
 
     assert response.status_code == 200
     assert "running" in response.text
     assert get_version() in response.text
 
 
-def test_home_page_says_when_the_database_is_not_migrated(
+def test_status_page_says_when_the_database_is_not_migrated(
     client: TestClient,
 ) -> None:
-    assert "not migrated" in client.get("/").text
+    assert "not migrated" in client.get("/status").text
 
 
 def test_static_assets_are_served_locally(client: TestClient) -> None:

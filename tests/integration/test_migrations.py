@@ -52,4 +52,4 @@ def test_status_page_shows_the_applied_revision(
     command.upgrade(_config(database_url), "head")
 
     with TestClient(create_app(Settings(database_url=database_url))) as client:
-        assert "Database revision 0004" in client.get("/").text
+        assert "Database revision 0004" in client.get("/status").text

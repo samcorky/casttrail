@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · CastTrail{% endblock %}
+{% block content %}
+<h1>Hello, {{ user.display_name }}</h1>
+<article>
+  <header>Your account</header>
+  <dl>
+    <dt>Email</dt>
+    <dd>{{ user.email }}</dd>
+    <dt>Role</dt>
+    <dd>{{ "Administrator" if user.is_admin else "User" }}</dd>
+  </dl>
+</article>
+<p>Nothing is being tracked yet.</p>
+{% endblock %}
