@@ -1,17 +1,4 @@
-{# One result: a picture (or the first letter when TMDB has none), a name and a detail. #}
-{% macro card(image_path, name, detail) %}
-<li>
-  <div class="card">
-    {% set src = tmdb_image(image_path, "w185") %}
-    {% if src %}
-    <img src="{{ src }}" alt="" width="185" height="278" loading="lazy" referrerpolicy="no-referrer">
-    {% else %}
-    <div class="no-image" aria-hidden="true">{{ name[:1] }}</div>
-    {% endif %}
-    <span><strong>{{ name }}</strong>{% if detail %}<small>{{ detail }}</small>{% endif %}</span>
-  </div>
-</li>
-{% endmacro %}
+{% from "_cards.html" import card, unwatch_form with context %}
 {% if message %}
 <p role="status">{{ message }}</p>
 {% endif %}
@@ -20,7 +7,20 @@
   <h2 id="people-heading">People</h2>
   <ul class="results">
     {% for person in people %}
-    {{ card(person.profile_path, person.name, person.known_for_department) }}
+    {% call card(person.profile_path, person.name, person.known_for_department) %}
+      {% set watch_id = watched_people.get(person.tmdb_id) %}
+      {% if watch_id %}
+      <small class="watching">&#10003; Watching</small>
+      {{ unwatch_form(watch_id, "search", q) }}
+      {% else %}
+      <form method="post" action="/watches/people">
+        <input type="hidden" name="tmdb_id" value="{{ person.tmdb_id }}">
+        <input type="hidden" name="return_to" value="search">
+        <input type="hidden" name="q" value="{{ q }}">
+        <button type="submit" class="compact">Watch</button>
+      </form>
+      {% endif %}
+    {% endcall %}
     {% endfor %}
   </ul>
 </section>
@@ -30,7 +30,21 @@
   <h2 id="films-heading">Films</h2>
   <ul class="results">
     {% for film in films %}
-    {{ card(film.poster_path, film.title, film.release_year) }}
+    {% call card(film.poster_path, film.title, film.release_year) %}
+      {% set watch_id = watched_productions.get((film.media_type, film.tmdb_id)) %}
+      {% if watch_id %}
+      <small class="watching">&#10003; Watching</small>
+      {{ unwatch_form(watch_id, "search", q) }}
+      {% else %}
+      <form method="post" action="/watches/productions">
+        <input type="hidden" name="media_type" value="{{ film.media_type }}">
+        <input type="hidden" name="tmdb_id" value="{{ film.tmdb_id }}">
+        <input type="hidden" name="return_to" value="search">
+        <input type="hidden" name="q" value="{{ q }}">
+        <button type="submit" class="compact">Watch</button>
+      </form>
+      {% endif %}
+    {% endcall %}
     {% endfor %}
   </ul>
 </section>
@@ -40,7 +54,21 @@
   <h2 id="series-heading">Series</h2>
   <ul class="results">
     {% for show in series %}
-    {{ card(show.poster_path, show.title, show.release_year) }}
+    {% call card(show.poster_path, show.title, show.release_year) %}
+      {% set watch_id = watched_productions.get((show.media_type, show.tmdb_id)) %}
+      {% if watch_id %}
+      <small class="watching">&#10003; Watching</small>
+      {{ unwatch_form(watch_id, "search", q) }}
+      {% else %}
+      <form method="post" action="/watches/productions">
+        <input type="hidden" name="media_type" value="{{ show.media_type }}">
+        <input type="hidden" name="tmdb_id" value="{{ show.tmdb_id }}">
+        <input type="hidden" name="return_to" value="search">
+        <input type="hidden" name="q" value="{{ q }}">
+        <button type="submit" class="compact">Watch</button>
+      </form>
+      {% endif %}
+    {% endcall %}
     {% endfor %}
   </ul>
 </section>

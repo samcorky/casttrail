@@ -19,8 +19,10 @@ from casttrail.web.admin_routes import router as admin_router
 from casttrail.web.auth_routes import router as auth_router
 from casttrail.web.csrf import verify_same_origin
 from casttrail.web.dependencies import LoginRequiredError
+from casttrail.web.errors import PageError, render_page_error
 from casttrail.web.routes import router
 from casttrail.web.search_routes import router as search_router
+from casttrail.web.watch_routes import router as watch_router
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -108,10 +110,12 @@ def create_app(
     )
     app.state.settings = settings
     app.add_exception_handler(LoginRequiredError, _redirect_to_login)
+    app.add_exception_handler(PageError, render_page_error)
     app.mount("/static", static_files(), name="static")
     app.include_router(router)
     app.include_router(auth_router)
     app.include_router(admin_router)
     app.include_router(account_router)
     app.include_router(search_router)
+    app.include_router(watch_router)
     return app

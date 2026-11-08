@@ -21,6 +21,8 @@ ROUTES: dict[tuple[str, str | None], str] = {
     ("/3/search/tv", "Warehouse 13"): "search_tv_warehouse_13",
     ("/3/search/movie", "Warehouse 13"): "search_movie_skyfall",
     ("/3/person/120679", None): "person_120679",
+    ("/3/movie/37724", None): "movie_37724",
+    ("/3/tv/15819", None): "tv_15819",
     ("/3/person/120679/combined_credits", None): "person_120679_combined_credits",
     ("/3/tv/15819/aggregate_credits", None): "tv_15819_aggregate_credits",
     ("/3/movie/37724/credits", None): "movie_37724_credits",
@@ -132,6 +134,54 @@ async def test_search_productions_returns_films_then_series(
     )
     film = next(p for p in productions if p.media_type == "movie")
     assert film.title == "Skyfall"
+
+
+# --- one production -------------------------------------------------------------
+
+
+async def test_a_film_is_looked_up_by_its_own_id(
+    tmdb: TmdbProvider, recorder: Recorder
+) -> None:
+    film = await tmdb.production("movie", 37724)
+
+    assert recorder.requests[0].url.path == "/3/movie/37724"
+    assert film is not None
+    assert (film.media_type, film.tmdb_id, film.title) == ("movie", 37724, "Skyfall")
+    assert film.release_year == 2012
+    assert film.poster_path == "/d0IVecFQvsGdSbnMAHqiYsNYaJT.jpg"
+
+
+async def test_a_series_is_looked_up_by_its_own_id(
+    tmdb: TmdbProvider, recorder: Recorder
+) -> None:
+    show = await tmdb.production("tv", 15819)
+
+    assert recorder.requests[0].url.path == "/3/tv/15819"
+    assert show is not None
+    assert (show.media_type, show.title, show.release_year) == (
+        "tv",
+        "Warehouse 13",
+        2009,
+    )
+
+
+async def test_the_same_number_is_a_different_thing_for_a_film_and_a_series(
+    tmdb: TmdbProvider,
+) -> None:
+    assert await tmdb.production("tv", 37724) is None
+    assert await tmdb.production("movie", 15819) is None
+
+
+async def test_an_unknown_film_or_series_is_none(tmdb: TmdbProvider) -> None:
+    assert await tmdb.production("movie", 1) is None
+    assert await tmdb.production("tv", 1) is None
+
+
+async def test_a_production_with_no_title_is_an_error() -> None:
+    provider = _provider(lambda _request: httpx2.Response(200, json={"id": 1}))
+
+    with pytest.raises(ProviderError, match="response format"):
+        await provider.production("movie", 1)
 
 
 # --- person ---------------------------------------------------------------------

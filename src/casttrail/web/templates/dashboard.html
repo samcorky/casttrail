@@ -11,5 +11,13 @@
     <dd>{{ "Administrator" if user.is_admin else "User" }}</dd>
   </dl>
 </article>
-<p>Nothing is being tracked yet.</p>
+{% if people or productions %}
+<p>
+  You are watching {{ people }} {{ "person" if people == 1 else "people" }}
+  and {{ productions }} {{ "film or series" if productions == 1 else "films and series" }}.
+  <a href="/watchlist">Open your watchlist</a>.
+</p>
+{% else %}
+<p>Nothing is being tracked yet. <a href="/search">Search</a> for a person, film or series to watch.</p>
+{% endif %}
 {% endblock %}

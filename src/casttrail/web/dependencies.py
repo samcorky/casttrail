@@ -10,6 +10,7 @@ from casttrail.auth.service import AuthService
 from casttrail.auth.throttle import ThrottlePolicy
 from casttrail.config import Settings
 from casttrail.providers.base import MetadataProvider
+from casttrail.watching.service import WatchService
 from casttrail.web.cookies import read_session_token
 
 if TYPE_CHECKING:
@@ -168,3 +169,18 @@ def get_metadata_provider(request: Request) -> MetadataProvider | None:
 
 
 MetadataDep = Annotated[MetadataProvider | None, Depends(get_metadata_provider)]
+
+
+def get_watch_service(session: SessionDep) -> WatchService:
+    """Build the watch service for a request.
+
+    Args:
+        session: The request's database session.
+
+    Returns:
+        A watch service bound to the session.
+    """
+    return WatchService(session)
+
+
+WatchServiceDep = Annotated[WatchService, Depends(get_watch_service)]

@@ -96,3 +96,14 @@ header nav ul {
     display: none !important;
   }
 }
+
+.card form {
+  margin: 0;
+}
+
+.compact {
+  width: 100%;
+  margin: 0;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.85rem;
+}
