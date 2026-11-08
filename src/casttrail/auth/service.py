@@ -242,6 +242,52 @@ class AuthService:
         )
         await self._session.commit()
 
+    async def change_password(
+        self,
+        user: User,
+        current_password: str,
+        new_password: str,
+        *,
+        keep_token: str | None,
+        client_ip: str | None = None,
+    ) -> None:
+        """Set a new password, ending every other session and forgetting devices.
+
+        Wrong guesses at the current password count towards the same limits as failed
+        sign-ins, so a stolen session cannot be used to guess it.
+
+        Args:
+            user: The signed-in user changing their own password.
+            current_password: The password they have now.
+            new_password: The password to set.
+            keep_token: The session token of this browser, which stays signed in.
+            client_ip: The client address.
+
+        Raises:
+            AccountError: If the new password is not acceptable or the same as the
+                current one, or the current password is wrong.
+            SignInThrottledError: If there have been too many recent failures.
+        """
+        check_new_password(new_password)
+        throttle = SignInThrottle(self._session, self._policy, self._now())
+        await throttle.check(user.email, client_ip)
+        if not verify_password(current_password, user.password_hash):
+            await throttle.record_failure(user.email, client_ip)
+            await self._session.commit()
+            msg = "The current password is incorrect."
+            raise AccountError(msg)
+        if new_password == current_password:
+            msg = "Choose a different password from the current one."
+            raise AccountError(msg)
+        await throttle.clear(user.email)
+        user.password_hash = hash_password(new_password)
+        others = delete(AuthSession).where(AuthSession.user_id == user.id)
+        if keep_token is not None:
+            others = others.where(AuthSession.token_hash != hash_token(keep_token))
+        await self._session.execute(others)
+        # Commits all of the above together.
+        await self.forget_devices(user.id)
+
     async def forget_devices(self, user_id: uuid.UUID) -> None:
         """Forget every remembered browser for an account.
 
