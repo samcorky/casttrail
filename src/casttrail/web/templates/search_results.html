@@ -1,0 +1,47 @@
+{# One result: a picture (or the first letter when TMDB has none), a name and a detail. #}
+{% macro card(image_path, name, detail) %}
+<li>
+  <div class="card">
+    {% set src = tmdb_image(image_path, "w185") %}
+    {% if src %}
+    <img src="{{ src }}" alt="" width="185" height="278" loading="lazy" referrerpolicy="no-referrer">
+    {% else %}
+    <div class="no-image" aria-hidden="true">{{ name[:1] }}</div>
+    {% endif %}
+    <span><strong>{{ name }}</strong>{% if detail %}<small>{{ detail }}</small>{% endif %}</span>
+  </div>
+</li>
+{% endmacro %}
+{% if message %}
+<p role="status">{{ message }}</p>
+{% endif %}
+{% if people %}
+<section aria-labelledby="people-heading">
+  <h2 id="people-heading">People</h2>
+  <ul class="results">
+    {% for person in people %}
+    {{ card(person.profile_path, person.name, person.known_for_department) }}
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% if films %}
+<section aria-labelledby="films-heading">
+  <h2 id="films-heading">Films</h2>
+  <ul class="results">
+    {% for film in films %}
+    {{ card(film.poster_path, film.title, film.release_year) }}
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% if series %}
+<section aria-labelledby="series-heading">
+  <h2 id="series-heading">Series</h2>
+  <ul class="results">
+    {% for show in series %}
+    {{ card(show.poster_path, show.title, show.release_year) }}
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}

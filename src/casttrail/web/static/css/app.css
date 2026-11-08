@@ -1,0 +1,53 @@
+/* CastTrail's own styles, on top of Pico. */
+
+.results {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+  gap: 1.25rem 1rem;
+  padding: 0;
+  list-style: none;
+}
+
+.results li {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.card img,
+.card .no-image {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  border-radius: var(--pico-border-radius);
+  background: var(--pico-muted-border-color);
+  object-fit: cover;
+}
+
+.card .no-image {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--pico-muted-color);
+  font-size: 2.5rem;
+}
+
+.card small {
+  display: block;
+  color: var(--pico-muted-color);
+}
+
+/* Let the navigation wrap onto more lines on a narrow screen instead of overflowing. */
+header nav,
+header nav ul {
+  flex-wrap: wrap;
+}
+
+header nav ul {
+  row-gap: 0.25rem;
+}

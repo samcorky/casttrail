@@ -1,3 +1,5 @@
+import re
+
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -6,11 +8,35 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from casttrail import get_version
 from casttrail.db import current_revision
+from casttrail.providers.tmdb import IMAGE_BASE_URL
 from casttrail.web import WEB_DIR
 from casttrail.web.dependencies import CurrentUser, SessionDep
 
 router = APIRouter()
 templates = Jinja2Templates(directory=WEB_DIR / "templates")
+
+# TMDB image paths look like "/abc123.jpg". Anything else is refused, because the path
+# comes from outside and ends up in a URL.
+_IMAGE_PATH = re.compile(r"/[A-Za-z0-9_-]+\.(?:jpg|png|webp)")
+_IMAGE_SIZES = frozenset({"w92", "w185", "w342"})
+
+
+def tmdb_image(path: str | None, size: str = "w185") -> str | None:
+    """Build the address of a TMDB poster or profile photo.
+
+    Args:
+        path: The image path TMDB gave, such as ``/abc123.jpg``.
+        size: One of TMDB's fixed widths.
+
+    Returns:
+        The full URL, or ``None`` if there is no usable image.
+    """
+    if path is None or size not in _IMAGE_SIZES or not _IMAGE_PATH.fullmatch(path):
+        return None
+    return f"{IMAGE_BASE_URL}/{size}{path}"
+
+
+templates.env.globals["tmdb_image"] = tmdb_image
 
 
 @router.get("/health")
