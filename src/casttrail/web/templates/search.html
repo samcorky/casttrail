@@ -5,7 +5,7 @@
 <form method="get" action="/search" role="search">
   <input id="q" name="q" type="search" value="{{ q }}" autocomplete="off" autofocus
          maxlength="100" aria-controls="results"
-         placeholder="Search people, films and series"
+         placeholder="People, films or series"
          aria-label="Search people, films and series"
          hx-get="/search" hx-trigger="input changed delay:400ms, search"
          hx-target="#results" hx-swap="innerHTML" hx-sync="this:replace"

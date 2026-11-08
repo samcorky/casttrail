@@ -100,3 +100,7 @@ Other choices: a person has at most one credit per production (the writer picks 
 - **TMDB attribution** is on the search page. TMDB's guidelines also ask for its logo; that is not added yet, so check the guidelines before the app is shared more widely.
 - **Token:** `CASTTRAIL_TMDB_READ_TOKEN` (the read access token, held as a secret). With it unset, search says it is not set up. `create_app` takes an optional `metadata_provider` so tests can pass a fake.
 - Fixed in passing: the navigation overflowed sideways on a phone and now wraps.
+
+## Navigation menu (2026-11-08)
+
+- On screens narrower than 768 px the navigation collapses behind a menu button. It is a progressive enhancement: `nav.js` adds a `js` class and reveals the button, and the CSS only hides the links when that class is there, so without JavaScript the links show and wrap. The button carries `aria-expanded` and `aria-controls`, and Escape closes the menu and returns focus to the button. Checked in a real browser at phone and desktop widths.
