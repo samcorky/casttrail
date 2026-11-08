@@ -59,7 +59,14 @@ def test_persistence_does_not_depend_on_the_web_framework() -> None:
 
 # Packages that hold plain service code. Rules on a package that does not exist yet
 # pass without checking anything, and start to bite the day the package appears.
-FRAMEWORK_FREE_PACKAGES = ("auth", "catalogue", "identity", "matching", "watching")
+FRAMEWORK_FREE_PACKAGES = (
+    "auth",
+    "catalogue",
+    "discovery",
+    "identity",
+    "matching",
+    "watching",
+)
 
 
 @pytest.mark.parametrize("package", FRAMEWORK_FREE_PACKAGES)

@@ -34,7 +34,7 @@ def _revisions(database_url: str) -> list[str]:
 def test_upgrade_on_an_empty_database_reaches_head(database_url: str) -> None:
     command.upgrade(_config(database_url), "head")
 
-    assert _revisions(database_url) == ["0006"]
+    assert _revisions(database_url) == ["0007"]
 
 
 def test_upgrade_is_repeatable(database_url: str) -> None:
@@ -43,7 +43,7 @@ def test_upgrade_is_repeatable(database_url: str) -> None:
     command.upgrade(config, "head")
     command.upgrade(config, "head")
 
-    assert _revisions(database_url) == ["0006"]
+    assert _revisions(database_url) == ["0007"]
 
 
 def test_status_page_shows_the_applied_revision(
@@ -52,7 +52,7 @@ def test_status_page_shows_the_applied_revision(
     command.upgrade(_config(database_url), "head")
 
     with TestClient(create_app(Settings(database_url=database_url))) as client:
-        assert "Database revision 0006" in client.get("/status").text
+        assert "Database revision 0007" in client.get("/status").text
 
 
 def _connect(database_url: str) -> sqlite3.Connection:
@@ -94,7 +94,7 @@ def test_upgrading_from_the_previous_revision_keeps_existing_data(
             ("a@example.com",)
         ]
         assert _table_names(connection) >= NEW_TABLES
-    assert _revisions(database_url) == ["0006"]
+    assert _revisions(database_url) == ["0007"]
 
 
 def test_the_migrated_schema_enforces_its_constraints(database_url: str) -> None:
@@ -144,3 +144,108 @@ def test_downgrading_removes_only_the_new_tables(database_url: str) -> None:
         tables = _table_names(connection)
     assert {"users", "sessions", "known_devices"} <= tables
     assert tables.isdisjoint(NEW_TABLES)
+
+
+DISCOVERY_TABLES = {
+    "conventions",
+    "convention_sources",
+    "source_observations",
+    "appearances",
+    "appearance_sources",
+}
+
+
+def test_upgrading_from_watches_keeps_existing_data(database_url: str) -> None:
+    config = _config(database_url)
+    command.upgrade(config, "0006")
+    with closing(_connect(database_url)) as connection:
+        connection.executescript(
+            f"""
+            INSERT INTO users (id, email, display_name, password_hash, is_active,
+                               is_admin, created_at)
+                VALUES ('u1', 'a@example.com', 'A', 'hash', 1, 1, {NOW});
+            INSERT INTO people (id, name, created_at) VALUES ('p1', 'Alice', {NOW});
+            INSERT INTO watches (id, user_id, person_id, created_at)
+                VALUES ('w1', 'u1', 'p1', {NOW});
+            INSERT INTO external_identities (id, provider, external_id, person_id,
+                                             created_at)
+                VALUES ('e1', 'rostercon', 'alice-en', 'p1', {NOW});
+            """
+        )
+
+    command.upgrade(config, "head")
+
+    with closing(_connect(database_url)) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM watches").fetchone() == (1,)
+        assert connection.execute(
+            "SELECT external_id FROM external_identities"
+        ).fetchall() == [("alice-en",)]
+        assert _table_names(connection) >= DISCOVERY_TABLES
+    assert _revisions(database_url) == ["0007"]
+
+
+def test_the_migrated_discovery_schema_enforces_its_constraints(
+    database_url: str,
+) -> None:
+    command.upgrade(_config(database_url), "head")
+    with closing(_connect(database_url)) as connection:
+        connection.executescript(
+            f"""
+            INSERT INTO conventions (id, name, created_at, updated_at)
+                VALUES ('c1', 'Con', {NOW}, {NOW});
+            INSERT INTO convention_sources (id, convention_id, provider, source_key,
+                                            source_url, first_seen_at, last_seen_at)
+                VALUES ('s1', 'c1', 'rostercon', 'k', 'https://x.test', {NOW}, {NOW});
+            INSERT INTO external_identities (id, provider, external_id, created_at)
+                VALUES ('e1', 'rostercon', 'g', {NOW});
+            INSERT INTO appearances (id, convention_id, external_identity_id,
+                                     created_at)
+                VALUES ('a1', 'c1', 'e1', {NOW});
+            INSERT INTO appearance_sources (id, appearance_id, provider, source_url,
+                                            listed, first_seen_at, last_seen_at)
+                VALUES ('as1', 'a1', 'rostercon', 'https://x.test', 1, {NOW}, {NOW});
+            """
+        )
+
+        refused = (
+            f"""INSERT INTO conventions (id, name, status, created_at, updated_at)
+                VALUES ('c2', 'Bad', 'moved', {NOW}, {NOW})""",
+            f"""INSERT INTO convention_sources (id, convention_id, provider, source_key,
+                    source_url, first_seen_at, last_seen_at)
+                VALUES ('s2', 'c1', 'rostercon', 'k', 'https://x', {NOW}, {NOW})""",
+            f"""INSERT INTO appearances (id, convention_id, external_identity_id,
+                    created_at) VALUES ('a2', 'c1', 'e1', {NOW})""",
+            f"""INSERT INTO appearances (id, convention_id, external_identity_id,
+                    created_at) VALUES ('a3', 'c1', 'nobody', {NOW})""",
+            f"""INSERT INTO appearance_sources (id, appearance_id, provider, source_url,
+                    listed, first_seen_at, last_seen_at)
+                VALUES ('as2', 'a1', 'rostercon', 'https://y.test', 1, {NOW}, {NOW})""",
+            f"""INSERT INTO appearance_sources (id, appearance_id, provider, source_url,
+                    listed, status, first_seen_at, last_seen_at)
+                VALUES ('as3', 'a1', 'other', 'https://y', 1, 'gone', {NOW}, {NOW})""",
+        )
+        for statement in refused:
+            with pytest.raises(sqlite3.IntegrityError):
+                connection.execute(statement)
+
+        connection.execute("DELETE FROM conventions WHERE id = 'c1'")
+        for table in ("convention_sources", "appearances", "appearance_sources"):
+            assert connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone() == (
+                0,
+            )
+        assert connection.execute(
+            "SELECT COUNT(*) FROM external_identities"
+        ).fetchone() == (1,)
+
+
+def test_downgrading_removes_only_the_discovery_tables(database_url: str) -> None:
+    config = _config(database_url)
+    command.upgrade(config, "head")
+
+    command.downgrade(config, "0006")
+
+    with closing(_connect(database_url)) as connection:
+        tables = _table_names(connection)
+    assert {"watches", "people", "external_identities"} <= tables
+    assert tables.isdisjoint(DISCOVERY_TABLES)
+    assert _revisions(database_url) == ["0006"]
