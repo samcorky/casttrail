@@ -1,8 +1,10 @@
 import json
+import re
+import unicodedata
 from dataclasses import dataclass
 from datetime import date
 from html.parser import HTMLParser
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
 
 from casttrail.providers.base import (
@@ -11,6 +13,9 @@ from casttrail.providers.base import (
     GuestObservation,
     ListingResult,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 PROVIDER_ID = "rostercon"
 HOST = "www.rostercon.com"
@@ -215,3 +220,225 @@ def parse_event_page(html: str, *, etag: str | None = None) -> ParsedEvent:
     if convention is None:
         return ParsedEvent(None, ListingResult(items=[], complete=False, etag=etag))
     return ParsedEvent(convention, _guests(event, etag))
+
+
+# --- event lists, person pages and the people index ---------------------------------
+
+_ROW_FIELDS = (
+    "date-list-event",
+    "name-list-event",
+    "location-list-event",
+    "serie-list-event",
+)
+_MONTHS = {
+    name: number
+    for number, name in enumerate(
+        (
+            "Jan",
+            "Feb",
+            "Mar",
+            "Apr",
+            "May",
+            "Jun",
+            "Jul",
+            "Aug",
+            "Sep",
+            "Oct",
+            "Nov",
+            "Dec",
+        ),
+        start=1,
+    )
+}
+_DATE = re.compile(r"\b([A-Z][a-z]{2}) (\d{1,2})(?:st|nd|rd|th) (\d{4})\b")
+_EVENTS_LINK = re.compile(r"/en/people/[^/]+/events/\d+")
+_PEOPLE_LOC = re.compile(r"<loc>\s*([^<\s]+)\s*</loc>")
+_MAX_SITEMAP_ENTRIES = 50_000
+
+
+@dataclass(frozen=True)
+class ListedEvent:
+    """One row of an event list: a person's, a show's or a country's."""
+
+    source_key: str
+    source_url: str
+    name: str
+    start_date: date | None
+    place: str | None
+    show: str | None
+
+
+@dataclass(frozen=True)
+class EventRows:
+    """The events found in a list page, and how many rows could not be read."""
+
+    events: list[ListedEvent]
+    skipped: int
+
+
+@dataclass(frozen=True)
+class PersonPage:
+    """A person Rostercon has a page for."""
+
+    slug: str
+    url: str
+
+
+class _RowReader(HTMLParser):
+    """Reads the ``<ul class="list-inline row">`` rows of an event list page."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.rows: list[dict[str, tuple[str, str | None]]] = []
+        self._row: dict[str, tuple[str, str | None]] | None = None
+        self._field: str | None = None
+        self._text: list[str] = []
+        self._href: str | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        values = dict(attrs)
+        classes = (values.get("class") or "").split()
+        if tag == "ul" and "list-inline" in classes and "row" in classes:
+            self._row = {}
+        elif self._row is not None and tag == "li":
+            for field in _ROW_FIELDS:
+                if field in classes:
+                    self._field, self._text, self._href = field, [], None
+        elif self._field == "name-list-event" and tag == "a" and self._href is None:
+            self._href = values.get("href")
+
+    def handle_data(self, data: str) -> None:
+        if self._field is not None:
+            self._text.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "li" and self._field is not None and self._row is not None:
+            text = " ".join("".join(self._text).split())
+            self._row[self._field] = (text, self._href)
+            self._field = None
+        elif tag == "ul" and self._row is not None:
+            if "date-list-event" in self._row:
+                self.rows.append(self._row)
+            self._row = None
+
+
+def _listed_date(text: str) -> date | None:
+    found = _DATE.search(text)
+    if found is None or found.group(1) not in _MONTHS:
+        return None
+    try:
+        return date(int(found.group(3)), _MONTHS[found.group(1)], int(found.group(2)))
+    except ValueError:
+        return None
+
+
+def parse_event_rows(html: str) -> EventRows:
+    """Read the events listed on a Rostercon list, person or show page.
+
+    Never raises on bad input. A row with no usable name or event address is counted
+    in ``skipped`` so a changed page shows up as a rising number, not as silence.
+
+    Args:
+        html: The page's HTML.
+
+    Returns:
+        The events in page order, and the number of rows that could not be read.
+    """
+    reader = _RowReader()
+    reader.feed(html)
+    events: list[ListedEvent] = []
+    skipped = 0
+    for row in reader.rows:
+        name, href = row.get("name-list-event", ("", None))
+        key = _slug(href, EVENT_PATH)
+        if key is None or not name or href is None:
+            skipped += 1
+            continue
+        events.append(
+            ListedEvent(
+                source_key=key,
+                source_url=href,
+                name=name,
+                start_date=_listed_date(row.get("date-list-event", ("", None))[0]),
+                place=row.get("location-list-event", ("", None))[0] or None,
+                show=row.get("serie-list-event", ("", None))[0] or None,
+            )
+        )
+    return EventRows(events=events, skipped=skipped)
+
+
+def parse_all_events_link(html: str) -> str | None:
+    """Find the link to a person page's full list of events.
+
+    Args:
+        html: A person page's HTML.
+
+    Returns:
+        The address, or ``None`` if there is none on Rostercon's own host.
+    """
+    for found in re.finditer(r'href="([^"]+)"', html):
+        parts = urlsplit(found.group(1))
+        if (
+            parts.scheme == "https"
+            and parts.netloc == HOST
+            and not parts.query
+            and _EVENTS_LINK.fullmatch(parts.path)
+        ):
+            return f"https://{HOST}{parts.path}"
+    return None
+
+
+def parse_people_sitemap(xml: str) -> list[PersonPage]:
+    """Read the English person pages from one of Rostercon's people sitemaps.
+
+    The sitemap is flat, so its addresses are read with a pattern rather than an XML
+    parser, which avoids the entity-expansion attacks an XML parser is open to.
+
+    Args:
+        xml: The sitemap's text.
+
+    Returns:
+        Each person once, in file order.
+    """
+    people: dict[str, PersonPage] = {}
+    for found in _PEOPLE_LOC.finditer(xml):
+        slug = _slug(found.group(1), PERSON_PATH)
+        if slug is not None and slug not in people:
+            people[slug] = PersonPage(slug=slug, url=found.group(1))
+        if len(people) >= _MAX_SITEMAP_ENTRIES:
+            break
+    return list(people.values())
+
+
+def slugify_name(name: str) -> str:
+    """Turn a name into the form Rostercon's addresses use.
+
+    Args:
+        name: A person's name.
+
+    Returns:
+        Lower-case ASCII words joined by hyphens, with accents removed.
+    """
+    plain = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
+    return re.sub(r"[^a-z0-9]+", "-", plain.lower()).strip("-")
+
+
+def match_people(name: str, people: Iterable[PersonPage]) -> list[PersonPage]:
+    """Find the Rostercon pages that could be a person with this name.
+
+    A page matches when its address is the name's slug, optionally followed by a
+    number (Rostercon's way of telling two people with one name apart) and ``-en``.
+    More than one match means the name is ambiguous, and the caller must not pick.
+
+    Args:
+        name: The person's name as TMDB gives it.
+        people: Rostercon's person pages.
+
+    Returns:
+        Every page that could be them, possibly none.
+    """
+    wanted = slugify_name(name)
+    if not wanted:
+        return []
+    pattern = re.compile(rf"{re.escape(wanted)}(?:-\d+)?(?:-en)?")
+    return [person for person in people if pattern.fullmatch(person.slug)]
