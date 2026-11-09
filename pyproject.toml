@@ -65,7 +65,7 @@ cmd = "uv sync --group dev"
 help = "Install the project and dev tools"
 
 [tool.poe.tasks.serve]
-cmd = "granian --interface asgi --factory --host 127.0.0.1 --port 8000 --workers 1 casttrail.main:create_app"
+cmd = "granian --interface asgi --factory --no-http1-keep-alive --host 127.0.0.1 --port 8000 --workers 1 casttrail.main:create_app"
 help = "Run the app on http://127.0.0.1:8000"
 
 [tool.poe.tasks.migrate]

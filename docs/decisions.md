@@ -285,3 +285,16 @@ Found while putting a real instance on Tailscale. Both matter again for WP-8.
 - **My appearances:** a watched person at a merged event had a match per source; the page now shows each person once per event, taking the surest (confirmed over possible).
 - **Found while testing:** an interrupted mutation run had left a mutant (`if False`) in the grouping code. It was caught because a new test for joining an unlinked listing failed. Every mutation run now restores files from a saved copy and the tree is checked afterwards.
 - **Not done:** per-source *alerts* (WP-6) will need one alert per person and event, not per source; that rule is noted here for then. The merge of suggested pairs by a person is 5.4, which is where real conflicts will mostly appear.
+
+## Robust startup, automatic updates and backups (2026-11-09)
+
+Requested by the project owner: start-up should update the database by itself, never crash, and the data should be backed up. See `docs/operations.md` for how to run and restore.
+
+- **Automatic update:** at startup the database is brought up to date (`CASTTRAIL_AUTO_MIGRATE`, on by default). Alembic is run in a worker thread; whether anything is pending is read straight from the file, so a start with nothing to do costs a single query.
+- **Copy first, always:** if an update is pending and the database already holds data, a backup is taken first, and **no update is attempted if that backup fails**. A failed update leaves that copy as the way back.
+- **Backups (`maintenance.py`):** SQLite's online backup (consistent while the app is writing), written under a temporary name and renamed when complete, so a crash never leaves something that looks like a backup. Kept in a `backups` folder beside the database (or `CASTTRAIL_BACKUP_DIR`). Daily copies are pruned to the newest 14; copies taken by hand, at startup or before an update are never deleted automatically. Timers: daily at 03:30; a catch-up copy at startup if the newest is over a day old (a PC that sleeps overnight); "Back up now" on the admin Source health page.
+- **Never crash:** every startup step is wrapped. A *problem* (folder cannot be made, check or update or safety copy fails) means the app starts but every page, apart from static files, answers a plain 503 page and `/health` says `degraded`; no timers start and no admin is created. A *warning* (a catch-up backup, the timers or the first admin failed) leaves the app working and is shown on the Source health page. Invalid settings give an app that only reports which settings are wrong, by name and never by value. Details go to the log only; the page and the health answer carry no paths, errors or secrets.
+- **Why 503 and not a half-working app:** with an unknown database state, serving pages could write to a broken database. A clear stop with the reason is safer.
+- **Tests:** the suite never reads a developer's `.env`, and builds its settings with backups off unless a test is about them.
+- **Also:** `uv run poe serve` now runs with `--no-http1-keep-alive`, the fix for the idle form resets seen over Tailscale.
+- **Not done:** restoring from the admin page (restore is a documented manual step, since replacing the live database from inside the running app is risky); copying backups off the machine (do that by hand for now).

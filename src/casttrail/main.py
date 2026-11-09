@@ -7,6 +7,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import RedirectResponse
+from pydantic import ValidationError
 from sqlalchemy.exc import OperationalError
 
 from casttrail import get_version
@@ -21,6 +22,14 @@ from casttrail.providers.rostercon_client import (
     create_client as create_rostercon_client,
 )
 from casttrail.providers.tmdb import TmdbProvider, create_client
+from casttrail.startup import (
+    ADMIN_WARNING,
+    TIMERS_WARNING,
+    ProblemGuard,
+    StartupReport,
+    prepare_database,
+    run_backup_quietly,
+)
 from casttrail.web import static_files
 from casttrail.web.account_routes import router as account_router
 from casttrail.web.admin_routes import router as admin_router
@@ -36,9 +45,11 @@ from casttrail.web.search_routes import router as search_router
 from casttrail.web.watch_routes import router as watch_router
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
+    from collections.abc import AsyncIterator, Callable
+    from contextlib import AbstractAsyncContextManager
 
-    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+    import httpx2
+    from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
     from casttrail.discovery.schedule import Refresher
     from casttrail.providers.base import MetadataProvider
@@ -78,23 +89,150 @@ async def _create_first_admin(
 def _start_scheduler(
     settings: Settings, refresher: Refresher
 ) -> AsyncIOScheduler | None:
-    """Start the daily refresh timer, if it is switched on."""
-    if not settings.refresh_enabled:
+    """Start the timers: the daily refresh (if switched on) and the daily backup."""
+    backups = settings.backups_enabled
+    if not settings.refresh_enabled and not backups:
         return None
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(
-        run_in_background,
-        CronTrigger(hour=settings.refresh_hour, minute=0),
-        args=[refresher],
-        id="rostercon-refresh",
-        # One at a time, and a start missed by up to an hour (the server was busy or
-        # just restarting) still runs once rather than waiting for tomorrow.
-        max_instances=1,
-        coalesce=True,
-        misfire_grace_time=3600,
-    )
+    # Both timers run one at a time, and a start missed by up to an hour (the server
+    # was busy or just restarting) still runs once rather than waiting for tomorrow.
+    timer = {"max_instances": 1, "coalesce": True, "misfire_grace_time": 3600}
+    if settings.refresh_enabled:
+        scheduler.add_job(
+            run_in_background,
+            CronTrigger(hour=settings.refresh_hour, minute=0),
+            args=[refresher],
+            id="rostercon-refresh",
+            **timer,
+        )
+    if backups:
+        scheduler.add_job(
+            run_backup_quietly,
+            CronTrigger(hour=settings.backup_hour, minute=30),
+            args=[settings, "daily"],
+            id="daily-backup",
+            **timer,
+        )
     scheduler.start()
     return scheduler
+
+
+def _safely_start_scheduler(
+    settings: Settings, refresher: Refresher, report: StartupReport
+) -> AsyncIOScheduler | None:
+    """Start the timers; if that fails, carry on without them and say so."""
+    try:
+        return _start_scheduler(settings, refresher)
+    except Exception:
+        logger.exception("The timers could not be started")
+        report.warnings.append(TIMERS_WARNING)
+        return None
+
+
+async def _safely_create_first_admin(
+    settings: Settings,
+    session_factory: async_sessionmaker[AsyncSession],
+    report: StartupReport,
+) -> None:
+    """Create the first administrator; if that fails, carry on and say so."""
+    try:
+        await _create_first_admin(settings, session_factory)
+    except Exception:
+        logger.exception("The first administrator could not be created")
+        report.warnings.append(ADMIN_WARNING)
+
+
+def _settings_problems(error: ValidationError) -> list[str]:
+    """Describe invalid settings by name, never by value (they may be secrets)."""
+    found: list[str] = []
+    for item in error.errors():
+        where = ".".join(str(part) for part in item["loc"])
+        name = f"CASTTRAIL_{where.upper()}" if where else "Settings"
+        found.append(f"{name}: {item['msg']}")
+    return found
+
+
+def _problem_app(problems: list[str]) -> FastAPI:
+    """Build an app that only says what is wrong, for when it cannot be configured."""
+    app = FastAPI(title="CastTrail", docs_url=None, redoc_url=None, openapi_url=None)
+    app.state.startup = StartupReport(problems=problems)
+    app.add_middleware(ProblemGuard)
+    return app
+
+
+def _start_providers(
+    app: FastAPI,
+    settings: Settings,
+    metadata_provider: MetadataProvider | None,
+    refresher: Refresher | None,
+) -> list[httpx2.AsyncClient]:
+    """Set up where metadata and convention listings come from.
+
+    Returns the HTTP clients that were opened, for closing at shutdown.
+    """
+    opened: list[httpx2.AsyncClient] = []
+    app.state.metadata = metadata_provider
+    if metadata_provider is None and settings.tmdb_read_token is not None:
+        tmdb_client = create_client(settings.tmdb_read_token.get_secret_value())
+        opened.append(tmdb_client)
+        app.state.metadata = TmdbProvider(tmdb_client)
+    if refresher is None:
+        rostercon_http = create_rostercon_client()
+        opened.append(rostercon_http)
+        fetcher = RosterconFetcher(rostercon_http)
+        app.state.refresher = RefreshJob(
+            app.state.session_factory, fetcher, PeopleIndex(fetcher)
+        )
+    else:
+        app.state.refresher = refresher
+    return opened
+
+
+async def _stop(
+    app: FastAPI,
+    scheduler: AsyncIOScheduler | None,
+    clients: list[httpx2.AsyncClient],
+    engine: AsyncEngine,
+) -> None:
+    """Shut down the timers, any refresh still running, and the connections."""
+    if scheduler is not None:
+        scheduler.shutdown(wait=False)
+    task = app.state.refresh_task
+    if task is not None and not task.done():
+        task.cancel()
+    for client in clients:
+        await client.aclose()
+    await engine.dispose()
+
+
+def _lifespan(
+    settings: Settings,
+    metadata_provider: MetadataProvider | None,
+    refresher: Refresher | None,
+) -> Callable[[FastAPI], AbstractAsyncContextManager[None]]:
+    """Build the start-up and shut-down steps. Nothing in them is allowed to crash."""
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        report = await prepare_database(settings)
+        app.state.startup = report
+        engine = create_engine(settings.database_url)
+        app.state.session_factory = create_session_factory(engine)
+        clients = _start_providers(app, settings, metadata_provider, refresher)
+        app.state.refresh_task = None
+        app.state.scheduler = None
+        try:
+            if not report.problems:
+                factory = app.state.session_factory
+                await _safely_create_first_admin(settings, factory, report)
+                app.state.scheduler = _safely_start_scheduler(
+                    settings, app.state.refresher, report
+                )
+            yield
+        finally:
+            await _stop(app, app.state.scheduler, clients, engine)
+
+    return lifespan
 
 
 def create_app(
@@ -104,6 +242,10 @@ def create_app(
     refresher: Refresher | None = None,
 ) -> FastAPI:
     """Build the application.
+
+    Invalid settings do not crash it: the app that comes back only says what is wrong.
+    Problems found while starting (the database cannot be updated, say) are held on
+    ``app.state.startup`` and shown instead of pages until fixed.
 
     Args:
         settings: Settings to use. Read from the environment when omitted.
@@ -117,65 +259,39 @@ def create_app(
     Returns:
         The configured FastAPI application.
     """
-    settings = settings or Settings()
-
-    @asynccontextmanager
-    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        engine = create_engine(settings.database_url)
-        app.state.session_factory = create_session_factory(engine)
-        tmdb_client = None
-        app.state.metadata = metadata_provider
-        if metadata_provider is None and settings.tmdb_read_token is not None:
-            tmdb_client = create_client(settings.tmdb_read_token.get_secret_value())
-            app.state.metadata = TmdbProvider(tmdb_client)
-        rostercon_http = None
-        if refresher is None:
-            rostercon_http = create_rostercon_client()
-            fetcher = RosterconFetcher(rostercon_http)
-            app.state.refresher = RefreshJob(
-                app.state.session_factory, fetcher, PeopleIndex(fetcher)
-            )
-        else:
-            app.state.refresher = refresher
-        app.state.refresh_task = None
-        scheduler = _start_scheduler(settings, app.state.refresher)
-        app.state.scheduler = scheduler
+    if settings is None:
         try:
-            await _create_first_admin(settings, app.state.session_factory)
-            yield
-        finally:
-            if scheduler is not None:
-                scheduler.shutdown(wait=False)
-            task = app.state.refresh_task
-            if task is not None and not task.done():
-                task.cancel()
-            if rostercon_http is not None:
-                await rostercon_http.aclose()
-            if tmdb_client is not None:
-                await tmdb_client.aclose()
-            await engine.dispose()
-
+            settings = Settings()
+        except ValidationError as error:
+            problems = _settings_problems(error)
+            logger.error("The settings are not valid: %s", problems)
+            return _problem_app(problems)
     app = FastAPI(
         title="CastTrail",
         version=get_version(),
         docs_url="/docs" if settings.docs_enabled else None,
         redoc_url=None,
         openapi_url="/openapi.json" if settings.docs_enabled else None,
-        lifespan=lifespan,
+        lifespan=_lifespan(settings, metadata_provider, refresher),
         # Every unsafe request, now and in later routers, must come from our own pages.
         dependencies=[Depends(verify_same_origin)],
     )
     app.state.settings = settings
+    app.state.startup = StartupReport()
+    app.add_middleware(ProblemGuard)
     app.add_exception_handler(LoginRequiredError, _redirect_to_login)
     app.add_exception_handler(PageError, render_page_error)
     app.mount("/static", static_files(), name="static")
-    app.include_router(router)
-    app.include_router(auth_router)
-    app.include_router(admin_router)
-    app.include_router(account_router)
-    app.include_router(search_router)
-    app.include_router(watch_router)
-    app.include_router(event_router)
-    app.include_router(match_router)
-    app.include_router(review_router)
+    for included in (
+        router,
+        auth_router,
+        admin_router,
+        account_router,
+        search_router,
+        watch_router,
+        event_router,
+        match_router,
+        review_router,
+    ):
+        app.include_router(included)
     return app

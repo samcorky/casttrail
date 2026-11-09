@@ -26,6 +26,7 @@ def _with_admin(settings: Settings, email: str, password: str) -> Settings:
         database_url=settings.database_url,
         admin_email=email,
         admin_password=SecretStr(password),
+        backups_enabled=False,
     )
 
 
@@ -119,13 +120,31 @@ def test_startup_without_admin_settings_creates_nobody(
     assert response.status_code == 200
 
 
-def test_startup_with_admin_settings_and_no_tables_explains_what_to_do(
+def test_startup_with_admin_settings_and_no_tables_does_not_crash(
+    settings: Settings,
+) -> None:
+    configured = _with_admin(settings, "admin@example.com", PASSWORD)
+    configured = configured.model_copy(update={"auto_migrate": False})
+    app = create_app(configured)
+
+    with TestClient(app) as client:
+        assert client.get("/health").status_code == 200
+
+    assert [w for w in app.state.startup.warnings if "administrator" in w]
+
+
+def test_a_fresh_database_gets_its_first_admin_without_a_manual_migrate(
     settings: Settings,
 ) -> None:
     configured = _with_admin(settings, "admin@example.com", PASSWORD)
 
-    with (
-        pytest.raises(RuntimeError, match="poe migrate"),
-        TestClient(create_app(configured)),
-    ):
-        pass
+    with TestClient(
+        create_app(configured),
+        follow_redirects=False,
+        headers={"Sec-Fetch-Site": "same-origin"},
+    ) as client:
+        response = client.post(
+            "/login", data={"email": "admin@example.com", "password": PASSWORD}
+        )
+
+    assert response.status_code == 303

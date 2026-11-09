@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import uuid
 from datetime import UTC, datetime
 from typing import Annotated
@@ -7,9 +8,11 @@ from typing import Annotated
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
+import casttrail.maintenance as maintenance
 from casttrail.auth.errors import AccountError
 from casttrail.discovery.health import rostercon_health
 from casttrail.discovery.schedule import recent_runs, run_in_background
+from casttrail.startup import run_backup
 from casttrail.web.dependencies import (
     AdminServiceDep,
     AuthServiceDep,
@@ -17,6 +20,8 @@ from casttrail.web.dependencies import (
     SessionDep,
 )
 from casttrail.web.routes import templates
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin")
 
@@ -243,21 +248,67 @@ async def start_refresh(request: Request, admin: CurrentAdmin) -> RedirectRespon
     return RedirectResponse("/admin/refresh?notice=started", status_code=303)
 
 
+_HEALTH_NOTICES = {
+    "backed-up": "A backup was taken.",
+    "backup-failed": "The backup failed. See the server log.",
+    "backup-off": "Backups are switched off.",
+}
+
+
 @router.get("/health", response_class=HTMLResponse)
 async def source_health(
-    request: Request, admin: CurrentAdmin, session: SessionDep
+    request: Request,
+    admin: CurrentAdmin,
+    session: SessionDep,
+    notice: str | None = None,
 ) -> Response:
-    """Show how the convention sources are doing.
+    """Show how the app, its backups and the convention sources are doing.
 
     Args:
         request: The current request.
         admin: The signed-in administrator.
         session: The request's database session.
+        notice: Which message to show after an action.
 
     Returns:
         The page.
     """
-    sources = [await rostercon_health(session, now=datetime.now(UTC))]
-    return templates.TemplateResponse(
-        request, "admin_health.html", {"user": admin, "sources": sources}
+    settings = request.app.state.settings
+    folder = maintenance.backup_folder(settings.database_url, settings.backup_dir)
+    backups = (
+        await asyncio.to_thread(maintenance.list_backups, folder) if folder else []
     )
+    context = {
+        "user": admin,
+        "sources": [await rostercon_health(session, now=datetime.now(UTC))],
+        "warnings": request.app.state.startup.warnings,
+        "backups": backups,
+        "backups_enabled": settings.backups_enabled,
+        "keep": settings.backup_keep,
+        "notice": _HEALTH_NOTICES.get(notice or ""),
+    }
+    return templates.TemplateResponse(request, "admin_health.html", context)
+
+
+@router.post("/backups/now", response_model=None)
+async def back_up_now(request: Request, admin: CurrentAdmin) -> RedirectResponse:
+    """Take a backup of the database now.
+
+    Args:
+        request: The current request.
+        admin: The signed-in administrator.
+
+    Returns:
+        A redirect back to the health page with a message.
+    """
+    del admin  # Only checked: any administrator may take a backup.
+    settings = request.app.state.settings
+    if not settings.backups_enabled:
+        return RedirectResponse("/admin/health?notice=backup-off", status_code=303)
+    try:
+        made = await run_backup(settings, "manual")
+    except Exception:
+        logger.exception("The manual backup failed")
+        return RedirectResponse("/admin/health?notice=backup-failed", status_code=303)
+    notice = "backed-up" if made is not None else "backup-failed"
+    return RedirectResponse(f"/admin/health?notice={notice}", status_code=303)
