@@ -8,6 +8,15 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
+@pytest.fixture(autouse=True)
+def _ignore_the_local_env_file(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep a developer's real ``.env`` out of every test.
+
+    Tests that check the file is read turn it back on for themselves.
+    """
+    monkeypatch.setitem(Settings.model_config, "env_file", None)
+
+
 @pytest.fixture
 def database_url(tmp_path: Path) -> str:
     """A throwaway SQLite database URL inside the test's temp directory."""

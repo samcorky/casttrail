@@ -9,6 +9,9 @@ wheels/
 # Virtual environments
 .venv
 
+# Local settings and secrets
+.env
+
 # Tooling
 .mypy_cache/
 .pytest_cache/

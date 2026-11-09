@@ -321,8 +321,8 @@ def test_an_event_page_shows_its_details_source_and_guests(
         "Zed Guest",
         "Dan Guest",
     ]
-    assert ">nameless-en</a>" in page
-    order[3] = ">nameless-en<"
+    assert "<td>nameless-en</td>" in page
+    order[3] = "<td>nameless-en</td>"
     assert sorted(order, key=page.index) == order
     # Listed guests come first, then ones no longer listed.
     assert page.index("Zed Guest") < page.index("Dan Guest")
@@ -361,7 +361,7 @@ def test_a_bare_event_page_shows_unknowns_and_no_guests(
         "No guests are known",
     ):
         assert text in page
-    assert "Source" not in page
+    assert "No source is recorded for this event." in page
 
 
 def test_an_unknown_event_is_a_404(settings: Settings, database_url: str) -> None:

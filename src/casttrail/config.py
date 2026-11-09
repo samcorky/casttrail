@@ -7,7 +7,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """Application settings, read from ``CASTTRAIL_*`` environment variables."""
 
-    model_config = SettingsConfigDict(env_prefix="CASTTRAIL_", extra="ignore")
+    # A ``.env`` file in the folder the app starts from is read too. Real environment
+    # variables win over it.
+    model_config = SettingsConfigDict(
+        env_prefix="CASTTRAIL_", env_file=".env", extra="ignore"
+    )
 
     # TMDB's "API Read Access Token". Without it, search says it is not configured.
     tmdb_read_token: SecretStr | None = None
