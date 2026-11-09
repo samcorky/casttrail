@@ -4,13 +4,15 @@ import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from sqlalchemy import delete, select
+from sqlalchemy import and_, delete, func, or_, select
 
 from casttrail.db import utc_now
+from casttrail.discovery.dedupe import EventFacts, judge, normalise_event_name
 from casttrail.discovery.models import (
     Appearance,
     AppearanceSource,
     Convention,
+    ConventionMerge,
     ConventionSource,
     SourceObservation,
 )
@@ -23,6 +25,10 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from casttrail.providers.base import ConventionInfo, ListingResult
+
+# Which source is trusted most for a convention's details, best first. A source that
+# is not the best one listing a convention only fills in what is still unknown.
+_PRIORITY = ("rostercon", "comiconomicon")
 
 # Observations kept per page. Older ones are pruned on every ingest.
 KEEP_OBSERVATIONS = 3
@@ -51,6 +57,13 @@ class IngestResult:
     guests_unlisted: int
     # Whether what was parsed differs from the previous observation of this page.
     changed: bool
+    # Pairs of conventions newly noted as possibly the same event, for a person.
+    merge_suggestions: int = 0
+
+
+def _rank(provider: str) -> int:
+    """Return how far down the trust order a provider is (0 is the most trusted)."""
+    return _PRIORITY.index(provider) if provider in _PRIORITY else len(_PRIORITY)
 
 
 def content_hash(convention: ConventionInfo, listing: ListingResult) -> str:
@@ -133,7 +146,9 @@ class DiscoveryService:
             .order_by(SourceObservation.fetched_at.desc())
             .limit(1)
         )
-        stored, created = await self._upsert_convention(provider, convention, now)
+        stored, created, suggested = await self._upsert_convention(
+            provider, convention, now
+        )
         added, seen = await self._upsert_guests(provider, stored, listing, now)
         unlisted = await self._unlist_missing(provider, stored, listing, seen)
         self._session.add(
@@ -153,50 +168,162 @@ class DiscoveryService:
             guests_added=added,
             guests_unlisted=unlisted,
             changed=previous != digest,
+            merge_suggestions=suggested,
         )
 
     async def _upsert_convention(
         self, provider: str, info: ConventionInfo, now: datetime
-    ) -> tuple[Convention, bool]:
+    ) -> tuple[Convention, bool, int]:
+        """Find or create the convention a page describes.
+
+        Returns the convention, whether it was created, and how many possible
+        duplicates were newly noted for a person to look at.
+        """
         source = await self._session.scalar(
             select(ConventionSource).where(
                 ConventionSource.provider == provider,
                 ConventionSource.source_key == info.source_key,
             )
         )
-        if source is None:
-            convention = Convention(
-                name=info.name,
-                created_at=now,
-                updated_at=now,
-                **{field: getattr(info, field) for field in _DETAIL_FIELDS},
-            )
+        if source is not None:
+            convention = await self._session.get_one(Convention, source.convention_id)
+            source.source_url = info.source_url
+            source.last_seen_at = now
+            await self._apply_details(convention, provider, info, now)
+            return convention, False, 0
+        twin, doubtful = await self._find_twins(provider, info)
+        created = twin is None
+        convention = twin or Convention(
+            name=info.name,
+            created_at=now,
+            updated_at=now,
+            **{field: getattr(info, field) for field in _DETAIL_FIELDS},
+        )
+        if created:
             self._session.add(convention)
             await self._session.flush()
-            self._session.add(
-                ConventionSource(
-                    convention_id=convention.id,
-                    provider=provider,
-                    source_key=info.source_key,
-                    source_url=info.source_url,
-                    first_seen_at=now,
-                    last_seen_at=now,
+        self._session.add(
+            ConventionSource(
+                convention_id=convention.id,
+                provider=provider,
+                source_key=info.source_key,
+                source_url=info.source_url,
+                first_seen_at=now,
+                last_seen_at=now,
+            )
+        )
+        await self._session.flush()
+        if not created:
+            await self._apply_details(convention, provider, info, now)
+        suggested = 0
+        for other, reason in doubtful:
+            suggested += await self._suggest(convention, other, reason, now)
+        return convention, created, suggested
+
+    async def _apply_details(
+        self,
+        convention: Convention,
+        provider: str,
+        info: ConventionInfo,
+        now: datetime,
+    ) -> None:
+        """Update a convention from one source's page.
+
+        The best-ranked source listing the convention may change what is known; any
+        other source only fills in what is still empty, so two sources never fight
+        over a name or a date.
+        """
+        providers = list(
+            await self._session.scalars(
+                select(ConventionSource.provider).where(
+                    ConventionSource.convention_id == convention.id
                 )
             )
-            return convention, True
-        convention = await self._session.get_one(Convention, source.convention_id)
-        changed = convention.name != info.name
-        convention.name = info.name
+        )
+        leads = _rank(provider) <= min(_rank(other) for other in providers)
+        changed = False
+        if leads and convention.name != info.name:
+            convention.name = info.name
+            changed = True
         for field in _DETAIL_FIELDS:
             value = getattr(info, field)
-            if value is not None and getattr(convention, field) != value:
-                setattr(convention, field, value)
-                changed = True
+            current = getattr(convention, field)
+            if value is None or current == value or (not leads and current is not None):
+                continue
+            setattr(convention, field, value)
+            changed = True
         if changed:
             convention.updated_at = now
-        source.source_url = info.source_url
-        source.last_seen_at = now
-        return convention, False
+
+    async def _find_twins(
+        self, provider: str, info: ConventionInfo
+    ) -> tuple[Convention | None, list[tuple[Convention, str]]]:
+        """Look for stored conventions this page might describe.
+
+        Only conventions this provider has not already listed are considered. Exactly
+        one strict match is the same event; anything weaker is returned, with why, for
+        a person to decide.
+        """
+        listed_by_provider = select(ConventionSource.convention_id).where(
+            ConventionSource.provider == provider
+        )
+        query = select(Convention).where(Convention.id.not_in(listed_by_provider))
+        if info.start_date is not None:
+            last = info.end_date or info.start_date
+            query = query.where(
+                or_(
+                    Convention.start_date.is_(None),
+                    and_(
+                        Convention.start_date <= last,
+                        func.coalesce(Convention.end_date, Convention.start_date)
+                        >= info.start_date,
+                    ),
+                )
+            )
+        facts = EventFacts(info.name, info.start_date, info.end_date)
+        wanted = normalise_event_name(info.name)
+        same: list[Convention] = []
+        maybe: list[tuple[Convention, str]] = []
+        for candidate in await self._session.scalars(query):
+            other = EventFacts(candidate.name, candidate.start_date, candidate.end_date)
+            verdict = judge(facts, other)
+            if verdict == "same":
+                same.append(candidate)
+            elif verdict == "maybe":
+                exact = normalise_event_name(candidate.name) == wanted
+                reason = (
+                    "Same name, but the days do not match exactly."
+                    if exact
+                    else "Alike names on overlapping days."
+                )
+                maybe.append((candidate, reason))
+        if len(same) == 1:
+            return same[0], maybe
+        ambiguous = [(c, "Several listings share this name and day.") for c in same]
+        return None, ambiguous + maybe
+
+    async def _suggest(
+        self, one: Convention, other: Convention, reason: str, now: datetime
+    ) -> int:
+        """Note a possible duplicate once; a pair already decided is left alone."""
+        first, second = sorted((one.id, other.id), key=str)
+        known = await self._session.scalar(
+            select(ConventionMerge.id).where(
+                ConventionMerge.first_id == first, ConventionMerge.second_id == second
+            )
+        )
+        if known is not None:
+            return 0
+        self._session.add(
+            ConventionMerge(
+                first_id=first,
+                second_id=second,
+                status="suggested",
+                reason=reason,
+                created_at=now,
+            )
+        )
+        return 1
 
     async def _upsert_guests(
         self,
