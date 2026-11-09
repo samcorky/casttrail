@@ -227,7 +227,12 @@ class AuthService:
                 User.is_active.is_(True),
             )
         )
-        return row.scalar_one_or_none()
+        user = row.scalar_one_or_none()
+        # Every transaction takes SQLite's one write lock when it begins, and this
+        # select began one. End it now: the rest of the request may wait on an outside
+        # service for seconds, and must not hold that lock while it does.
+        await self._session.commit()
+        return user
 
     async def sign_out(self, token: str) -> None:
         """End the session a token belongs to.
