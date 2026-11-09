@@ -7,7 +7,12 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from casttrail.providers.base import MediaType, ProviderError
-from casttrail.web.dependencies import CurrentUser, MetadataDep, WatchServiceDep
+from casttrail.web.dependencies import (
+    CurrentUser,
+    MatchServiceDep,
+    MetadataDep,
+    WatchServiceDep,
+)
 from casttrail.web.errors import PageError
 from casttrail.web.routes import templates
 
@@ -61,6 +66,7 @@ async def watch_person(
     user: CurrentUser,
     metadata: MetadataDep,
     service: WatchServiceDep,
+    matches: MatchServiceDep,
     tmdb_id: Annotated[int, Form(gt=0)],
     return_to: Annotated[ReturnTo, Form()] = "search",
     q: Annotated[str, Form(max_length=100)] = "",
@@ -74,6 +80,7 @@ async def watch_person(
         user: The signed-in user.
         metadata: Where people come from.
         service: The watch service.
+        matches: The match service, so the new watch shows up at once.
         tmdb_id: TMDB's id for the person.
         return_to: Which page to go back to.
         q: The search to go back to.
@@ -98,6 +105,7 @@ async def watch_person(
     if person is None:
         raise PageError("TMDB has no such person.", status_code=404)
     await service.watch_person(user.id, person)
+    await matches.rematch()
     return _back(return_to, q)
 
 
@@ -150,6 +158,7 @@ async def unwatch(
     watch_id: uuid.UUID,
     user: CurrentUser,
     service: WatchServiceDep,
+    matches: MatchServiceDep,
     return_to: Annotated[ReturnTo, Form()] = "watchlist",
     q: Annotated[str, Form(max_length=100)] = "",
 ) -> RedirectResponse:
@@ -159,6 +168,7 @@ async def unwatch(
         watch_id: The watch to remove.
         user: The signed-in user. Only their own watches can be removed.
         service: The watch service.
+        matches: The match service, so removed watches stop matching at once.
         return_to: Which page to go back to.
         q: The search to go back to.
 
@@ -170,4 +180,5 @@ async def unwatch(
     """
     if not await service.unwatch(user.id, watch_id):
         raise PageError("That watch was not found.", status_code=404)
+    await matches.rematch()
     return _back(return_to, q)
