@@ -2,6 +2,7 @@ import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
+import structlog
 from sqlalchemy import delete, select, update
 
 from casttrail.db import utc_now
@@ -16,6 +17,8 @@ from casttrail.discovery.models import (
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = structlog.get_logger(__name__)
 
 Outcome = Literal["done", "missing", "same-source"]
 
@@ -125,7 +128,10 @@ class MergeService:
                 await self._session.rollback()
         except BaseException:
             await self._session.rollback()
+            logger.exception("merge_failed", pair=str(pair_id), keep=str(keep_id))
             raise
+        if outcome != "done":
+            logger.info("merge_refused", pair=str(pair_id), reason=outcome)
         return outcome
 
     async def reject(self, pair_id: uuid.UUID) -> bool:

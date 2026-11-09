@@ -1,10 +1,10 @@
 import asyncio
 import json
-import logging
 import uuid
 from datetime import UTC, datetime
 from typing import Annotated
 
+import structlog
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
@@ -21,7 +21,7 @@ from casttrail.web.dependencies import (
 )
 from casttrail.web.routes import templates
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/admin")
 
@@ -90,10 +90,11 @@ async def create_user(
         A redirect back to the list, or the page again with the reason it failed.
     """
     try:
-        await auth.create_user(
+        created = await auth.create_user(
             email=email, display_name=display_name, password=password
         )
     except AccountError as error:
+        logger.warning("user_create_refused", reason=str(error))
         return await _users_page(
             request,
             admin,
@@ -101,6 +102,7 @@ async def create_user(
             error=str(error),
             form={"email": email, "display_name": display_name},
         )
+    logger.info("user_created", user_id=str(created.id))
     return RedirectResponse("/admin/users", status_code=303)
 
 
@@ -128,9 +130,15 @@ async def disable_user(
     try:
         user = await service.set_active(admin, user_id, active=False)
     except AccountError as error:
+        logger.warning(
+            "user_disable_refused",
+            target=str(user_id),
+            reason=str(error),
+        )
         return await _users_page(request, admin, service, error=str(error))
     if user is None:
         raise HTTPException(status_code=404)
+    logger.info("user_disabled", target=str(user_id))
     return RedirectResponse("/admin/users", status_code=303)
 
 
@@ -153,18 +161,19 @@ async def enable_user(
     """
     if await service.set_active(admin, user_id, active=True) is None:
         raise HTTPException(status_code=404)
+    logger.info("user_enabled", target=str(user_id))
     return RedirectResponse("/admin/users", status_code=303)
 
 
 @router.post("/users/{user_id}/make-admin")
 async def make_admin(
-    user_id: uuid.UUID, _admin: CurrentAdmin, service: AdminServiceDep
+    user_id: uuid.UUID, admin: CurrentAdmin, service: AdminServiceDep
 ) -> RedirectResponse:
     """Give an account administrator rights.
 
     Args:
         user_id: The account to promote.
-        _admin: The signed-in administrator, required but not otherwise used.
+        admin: The signed-in administrator.
         service: The admin service.
 
     Returns:
@@ -175,6 +184,7 @@ async def make_admin(
     """
     if await service.make_admin(user_id) is None:
         raise HTTPException(status_code=404)
+    logger.warning("user_made_admin", target=str(user_id))
     return RedirectResponse("/admin/users", status_code=303)
 
 
@@ -238,10 +248,11 @@ async def start_refresh(request: Request, admin: CurrentAdmin) -> RedirectRespon
     Returns:
         A redirect to the refresh page with a message.
     """
-    del admin  # Only checked: any administrator may start a refresh.
     task = request.app.state.refresh_task
     if task is not None and not task.done():
+        logger.info("refresh_request_ignored", reason="running")
         return RedirectResponse("/admin/refresh?notice=running", status_code=303)
+    logger.info("refresh_requested")
     request.app.state.refresh_task = asyncio.create_task(
         run_in_background(request.app.state.refresher)
     )
@@ -301,14 +312,13 @@ async def back_up_now(request: Request, admin: CurrentAdmin) -> RedirectResponse
     Returns:
         A redirect back to the health page with a message.
     """
-    del admin  # Only checked: any administrator may take a backup.
     settings = request.app.state.settings
     if not settings.backups_enabled:
         return RedirectResponse("/admin/health?notice=backup-off", status_code=303)
     try:
         made = await run_backup(settings, "manual")
     except Exception:
-        logger.exception("The manual backup failed")
+        logger.exception("manual_backup_failed")
         return RedirectResponse("/admin/health?notice=backup-failed", status_code=303)
     notice = "backed-up" if made is not None else "backup-failed"
     return RedirectResponse(f"/admin/health?notice={notice}", status_code=303)

@@ -357,6 +357,16 @@ The app is meant to run in Docker. Files: `Dockerfile`, `compose.yaml`, `.docker
 - **Rule for new code:** never await an outside service (HTTP, a subprocess, a long sleep) while a session has a transaction open. Read what is needed, commit or close, do the outside work, then open a new transaction to write.
 - **Not changed, but noted:** reads also take the write lock (every transaction is `BEGIN IMMEDIATE`). That is fine while transactions are short; if the app grows, a read-only connection with a plain `BEGIN` would remove the contention altogether.
 
+## Logging with structlog (2026-11-09)
+
+- **Why:** a refresh stopped early with only "Rostercon could not be read" and nothing in the log said why. The app logged almost nothing, as free text.
+- **Decision (project owner):** use structlog, and log everywhere useful.
+- **Design:** structlog sits over the standard library's logging (`ProcessorFormatter`), so Alembic, APScheduler and Granian lines share one stream and look. JSON when stdout is not a terminal (Docker), coloured console otherwise; `CASTTRAIL_LOG_LEVEL` and `CASTTRAIL_LOG_FORMAT` override. Noisy libraries are held at warning.
+- **Safety:** a `redact` processor blanks any key containing password, secret, token, authorization, cookie or api_key. The request line holds the path only: never the query string, headers, cookies or body. Outside calls log the path only.
+- **Correlation:** `RequestLogMiddleware` (outermost) gives each request an id (a caller's short alphanumeric `X-Request-ID` is kept) and returns it. `get_current_user` binds `user_id`; a refresh binds `job_id`; the background task binds `task`. All via contextvars, so no call site passes them. This also avoids reading an expired ORM object after a rollback.
+- **Events:** requests; startup, migration and backup; refresh start/stop (with reason and cause)/finish with counts, each person matched, unmatched or ambiguous, each event page fetched or unreadable; Rostercon and TMDB requests, spacing and cooldowns; sign-in, password, account, identity, merge and watch actions.
+- **Tests:** `tests/unit/test_logging.py` (format, level, redaction, quiet libraries, idempotence, request id, no query string); the old log-text tests now read events with `capture_logs()`.
+
 ## UI: Bootstrap 5.3 instead of Pico (2026-11-09)
 
 - **Choice (project owner):** Bootstrap 5.3, not the 6.0 alpha. Bootstrap 6 is `6.0.0-alpha.1` (its own docs call it an alpha, and 5.3 is still marked "Latest"), so a stable release was used. Issue #50 asked whether to switch at all; the answer was yes.

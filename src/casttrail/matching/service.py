@@ -2,6 +2,7 @@ import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+import structlog
 from sqlalchemy import select
 
 from casttrail.catalogue.models import Person
@@ -17,6 +18,8 @@ if TYPE_CHECKING:
     from datetime import datetime
 
     from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = structlog.get_logger(__name__)
 
 # (user, appearance, match_key) names one match.
 _Key = tuple[uuid.UUID, uuid.UUID, str]
@@ -82,7 +85,14 @@ class MatchService:
             await self._session.commit()
         except BaseException:
             await self._session.rollback()
+            logger.exception("rematch_failed")
             raise
+        logger.debug(
+            "rematched",
+            added=result.added,
+            updated=result.updated,
+            removed=result.removed,
+        )
         return result
 
     async def _rematch(self) -> RematchResult:

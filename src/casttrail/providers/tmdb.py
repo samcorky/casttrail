@@ -1,8 +1,10 @@
 import asyncio
+import time
 from datetime import timedelta
 from typing import Any
 
 import httpx2
+import structlog
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from casttrail.providers.base import (
@@ -14,6 +16,8 @@ from casttrail.providers.base import (
     Production,
     ProviderError,
 )
+
+logger = structlog.get_logger(__name__)
 
 BASE_URL = "https://api.themoviedb.org/3"
 IMAGE_BASE_URL = "https://image.tmdb.org/t/p"
@@ -44,6 +48,10 @@ def create_client(
 # What TMDB sends. Anything we do not list is ignored, and anything we list but cannot
 # read is a ``ProviderError``: imported data is untrusted and a changed format should be
 # noticed, not guessed at.
+def _ms(started: float) -> float:
+    return round((time.perf_counter() - started) * 1000, 1)
+
+
 class _Wire(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -305,12 +313,25 @@ class TmdbProvider:
         *,
         allow_missing: bool = False,
     ) -> Any:  # noqa: ANN401 - untrusted JSON, validated by ``_parse``
+        started = time.perf_counter()
         try:
             response = await self._client.get(path, params=params)
         except httpx2.TransportError as error:
+            # Only the path is logged: the search terms and the token are never.
+            logger.warning(
+                "tmdb_unreachable",
+                path=path,
+                error=type(error).__name__,
+                duration_ms=_ms(started),
+            )
             msg = "Could not reach TMDB."
             raise ProviderError(msg) from error
-        if response.status_code == 404 and allow_missing:
+        status = response.status_code
+        missing_is_fine = status == 404 and allow_missing
+        (logger.debug if status < 400 or missing_is_fine else logger.warning)(
+            "tmdb_request", path=path, status=status, duration_ms=_ms(started)
+        )
+        if missing_is_fine:
             return None
         if response.status_code in {401, 403}:
             msg = "TMDB rejected the credentials."

@@ -17,6 +17,7 @@ dependencies = [
     "pydantic-settings>=2.12",
     "python-multipart>=0.0.20",
     "sqlalchemy[asyncio]>=2.0",
+    "structlog>=26.1.0",
 ]
 
 [dependency-groups]

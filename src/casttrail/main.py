@@ -1,8 +1,8 @@
-import logging
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from typing import TYPE_CHECKING
 
+import structlog
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from fastapi import Depends, FastAPI, Request
@@ -16,6 +16,7 @@ from casttrail.auth.service import AuthService
 from casttrail.config import Settings
 from casttrail.db import create_engine, create_session_factory
 from casttrail.discovery.schedule import RefreshJob, run_in_background
+from casttrail.logging_config import configure_logging
 from casttrail.providers.rostercon_client import (
     PeopleIndex,
     RosterconFetcher,
@@ -40,6 +41,7 @@ from casttrail.web.errors import PageError, render_page_error
 from casttrail.web.event_routes import router as event_router
 from casttrail.web.match_routes import router as match_router
 from casttrail.web.merge_routes import router as merge_router
+from casttrail.web.request_log import RequestLogMiddleware
 from casttrail.web.review_routes import router as review_router
 from casttrail.web.routes import router
 from casttrail.web.search_routes import router as search_router
@@ -55,7 +57,7 @@ if TYPE_CHECKING:
     from casttrail.discovery.schedule import Refresher
     from casttrail.providers.base import MetadataProvider
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 async def _redirect_to_login(_request: Request, _exc: Exception) -> RedirectResponse:
@@ -84,7 +86,7 @@ async def _create_first_admin(
             msg = "The database has no tables yet. Run `uv run poe migrate` first."
             raise RuntimeError(msg) from error
     if created:
-        logger.info("Created the first administrator %s", settings.admin_email)
+        logger.info("first_admin_created", email=settings.admin_email)
 
 
 def _start_scheduler(
@@ -115,6 +117,12 @@ def _start_scheduler(
             **timer,
         )
     scheduler.start()
+    logger.info(
+        "scheduler_started",
+        jobs=sorted(job.id for job in scheduler.get_jobs()),
+        refresh_hour=settings.refresh_hour if settings.refresh_enabled else None,
+        backup_hour=settings.backup_hour if backups else None,
+    )
     return scheduler
 
 
@@ -125,7 +133,7 @@ def _safely_start_scheduler(
     try:
         return _start_scheduler(settings, refresher)
     except Exception:
-        logger.exception("The timers could not be started")
+        logger.exception("scheduler_start_failed")
         report.warnings.append(TIMERS_WARNING)
         return None
 
@@ -139,7 +147,7 @@ async def _safely_create_first_admin(
     try:
         await _create_first_admin(settings, session_factory)
     except Exception:
-        logger.exception("The first administrator could not be created")
+        logger.exception("first_admin_failed")
         report.warnings.append(ADMIN_WARNING)
 
 
@@ -215,6 +223,15 @@ def _lifespan(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        logger.info(
+            "app_starting",
+            version=get_version(),
+            auto_migrate=settings.auto_migrate,
+            backups=settings.backups_enabled,
+            refresh=settings.refresh_enabled,
+            tmdb_configured=settings.tmdb_read_token is not None,
+            log_level=settings.log_level,
+        )
         report = await prepare_database(settings)
         app.state.startup = report
         engine = create_engine(settings.database_url)
@@ -229,8 +246,15 @@ def _lifespan(
                 app.state.scheduler = _safely_start_scheduler(
                     settings, app.state.refresher, report
                 )
+            logger.info(
+                "app_ready",
+                problems=report.problems,
+                warnings=report.warnings,
+                serving=not report.problems,
+            )
             yield
         finally:
+            logger.info("app_stopping")
             await _stop(app, app.state.scheduler, clients, engine)
 
     return lifespan
@@ -264,9 +288,11 @@ def create_app(
         try:
             settings = Settings()
         except ValidationError as error:
+            configure_logging()
             problems = _settings_problems(error)
-            logger.error("The settings are not valid: %s", problems)
+            logger.error("settings_invalid", problems=problems)
             return _problem_app(problems)
+    configure_logging(settings.log_level, settings.log_format)
     app = FastAPI(
         title="CastTrail",
         version=get_version(),
@@ -280,6 +306,8 @@ def create_app(
     app.state.settings = settings
     app.state.startup = StartupReport()
     app.add_middleware(ProblemGuard)
+    # Added last, so it is outermost and also logs what the guard answers.
+    app.add_middleware(RequestLogMiddleware)
     app.add_exception_handler(LoginRequiredError, _redirect_to_login)
     app.add_exception_handler(PageError, render_page_error)
     app.mount("/static", static_files(), name="static")

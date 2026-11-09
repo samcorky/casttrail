@@ -1,6 +1,7 @@
 from datetime import timedelta
 from typing import TYPE_CHECKING, Annotated
 
+import structlog
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -97,7 +98,12 @@ async def get_current_user(
     token = read_session_token(request, settings)
     if token is None:
         return None
-    return await auth.authenticate(token)
+    user = await auth.authenticate(token)
+    if user is not None:
+        # So the request log and every line logged for this request say who it was for.
+        request.state.user_id = str(user.id)
+        structlog.contextvars.bind_contextvars(user_id=str(user.id))
+    return user
 
 
 CurrentUserOptional = Annotated[User | None, Depends(get_current_user)]

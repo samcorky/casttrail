@@ -105,3 +105,22 @@ does not help if the disk is lost.
 | `CASTTRAIL_BACKUP_HOUR` | `3` | Hour of the daily backup (server local time) |
 | `CASTTRAIL_REFRESH_ENABLED` | `false` | Contact Rostercon daily |
 | `CASTTRAIL_REFRESH_HOUR` | `4` | Hour of the refresh |
+| `CASTTRAIL_LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING` or `ERROR` |
+| `CASTTRAIL_LOG_FORMAT` | `auto` | `json`, `console`, or `auto` (JSON unless a terminal is attached) |
+
+## Reading the log
+
+Each line is an event name plus key-values, for example
+`{"event": "refresh_finished", "people_matched": 4, "duration_s": 312.4, ...}`.
+`docker compose logs -f casttrail` follows it; filter with `jq`, e.g.
+`docker compose logs --no-log-prefix casttrail | jq 'select(.level != "info")'`.
+
+- Every request is one `request` line (method, path, status, `duration_ms`, `user_id`).
+  The query string, cookies and bodies are never logged. The same `request_id` is on every
+  line written while handling it and is returned as the `X-Request-ID` header.
+- A refresh binds a `job_id`; look for `refresh_started`, `refresh_stopped` (with `reason`
+  and the error) and `refresh_finished` (with the counts).
+- Sign-ins, password changes, account changes, identity decisions, merges and watches
+  are logged at `info`/`warning` as an audit trail, by `user_id`.
+- Outside calls log the path only (`rostercon_request`, `tmdb_request`), never the search
+  terms or token. Set `CASTTRAIL_LOG_LEVEL=DEBUG` for per-page detail.

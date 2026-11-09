@@ -6,11 +6,12 @@ in full, and described in plain words that hold no paths or secrets.
 """
 
 import asyncio
-import logging
+import time
 from dataclasses import dataclass, field
 from html import escape
 from typing import TYPE_CHECKING
 
+import structlog
 from fastapi.responses import HTMLResponse, JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -25,7 +26,7 @@ if TYPE_CHECKING:
     from starlette.middleware.base import RequestResponseEndpoint
 
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 TIMERS_WARNING = "The daily timers could not be started. Nothing will run by itself."
 ADMIN_WARNING = "The first administrator could not be created. See the server log."
@@ -63,8 +64,19 @@ async def run_backup(
     folder = maintenance.backup_folder(settings.database_url, settings.backup_dir)
     if not settings.backups_enabled or file is None or folder is None:
         return None
+    started = time.perf_counter()
     made = await asyncio.to_thread(maintenance.backup, file, folder, reason, now=now)
-    await asyncio.to_thread(maintenance.prune_backups, folder, settings.backup_keep)
+    removed = await asyncio.to_thread(
+        maintenance.prune_backups, folder, settings.backup_keep
+    )
+    logger.info(
+        "backup_taken",
+        reason=reason,
+        file=made.name,
+        size_bytes=made.stat().st_size,
+        pruned=len(removed),
+        duration_ms=round((time.perf_counter() - started) * 1000, 1),
+    )
     return made
 
 
@@ -76,12 +88,9 @@ async def run_backup_quietly(settings: Settings, reason: str) -> None:
         reason: Why the copy is being taken.
     """
     try:
-        made = await run_backup(settings, reason)
+        await run_backup(settings, reason)
     except Exception:
-        logger.exception("The %s backup failed", reason)
-        return
-    if made is not None:
-        logger.info("Backed up the database (%s)", reason)
+        logger.exception("backup_failed", reason=reason)
 
 
 async def prepare_database(settings: Settings) -> StartupReport:
@@ -104,7 +113,7 @@ async def prepare_database(settings: Settings) -> StartupReport:
     try:
         file.parent.mkdir(parents=True, exist_ok=True)
     except OSError:
-        logger.exception("The data folder could not be created")
+        logger.exception("data_folder_failed", folder=file.parent.name)
         report.problems.append(FOLDER_PROBLEM)
         return report
     folder = maintenance.backup_folder(settings.database_url, settings.backup_dir)
@@ -121,28 +130,39 @@ async def _migrate(
     try:
         pending = await asyncio.to_thread(maintenance.migration_pending, file)
     except Exception:
-        logger.exception("Could not tell whether the database needs updating")
+        logger.exception("migration_check_failed")
         report.problems.append(CHECK_PROBLEM)
         return False
+    before = await asyncio.to_thread(maintenance.current_revision, file)
     if not pending:
+        logger.info("database_up_to_date", revision=before)
         return True
-    has_data = await asyncio.to_thread(maintenance.current_revision, file) is not None
+    has_data = before is not None
+    logger.info(
+        "migration_pending", from_revision=before, to_revision=maintenance.head()
+    )
     if has_data and settings.backups_enabled and folder is not None:
         try:
             await asyncio.to_thread(
                 maintenance.backup, file, folder, "before-migration"
             )
         except Exception:
-            logger.exception("The backup before updating the database failed")
+            logger.exception("migration_backup_failed", from_revision=before)
             report.problems.append(BACKUP_FIRST_PROBLEM)
             return False
+    started = time.perf_counter()
     try:
         await asyncio.to_thread(maintenance.migrate, settings.database_url)
     except Exception:
-        logger.exception("The database update failed")
+        logger.exception("migration_failed", from_revision=before)
         report.problems.append(MIGRATE_PROBLEM)
         return False
-    logger.info("The database was updated")
+    logger.info(
+        "migration_done",
+        from_revision=before,
+        to_revision=await asyncio.to_thread(maintenance.current_revision, file),
+        duration_ms=round((time.perf_counter() - started) * 1000, 1),
+    )
     return True
 
 
@@ -158,7 +178,7 @@ async def _catch_up_backup(
         if has_data is not None and due:
             await run_backup(settings, "startup")
     except Exception:
-        logger.exception("The startup backup failed")
+        logger.exception("startup_backup_failed")
         report.warnings.append(BACKUP_WARNING)
 
 

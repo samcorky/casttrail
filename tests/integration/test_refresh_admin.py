@@ -1,6 +1,5 @@
 import asyncio
 import json
-import logging
 import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -8,6 +7,8 @@ from typing import TYPE_CHECKING
 
 import httpx2
 import pytest
+import structlog
+import structlog.testing
 from alembic import command
 from alembic.config import Config
 from apscheduler.triggers.cron import CronTrigger
@@ -412,41 +413,20 @@ class Scripted:
         return self.outcome
 
 
-async def test_a_crashing_refresh_is_logged_and_does_not_escape(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    with caplog.at_level(logging.INFO):
+async def test_a_crashing_refresh_is_logged_and_does_not_escape() -> None:
+    with structlog.testing.capture_logs() as logs:
         await run_in_background(Scripted(RuntimeError("boom")))
 
-    assert "refresh crashed" in caplog.text
+    assert [entry["event"] for entry in logs] == ["background_refresh_failed"]
+    assert logs[0]["log_level"] == "error"
 
 
-async def test_a_refresh_that_was_turned_away_is_logged(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    with caplog.at_level(logging.INFO):
-        await run_in_background(Scripted(None))
-
-    assert "already running" in caplog.text
-
-
-async def test_a_refresh_that_stopped_early_is_logged_as_a_warning(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    report = RefreshReport(stopped="Rostercon asked us to wait")
-
-    with caplog.at_level(logging.INFO):
-        await run_in_background(Scripted(report))
-
-    assert [record.levelno for record in caplog.records] == [logging.WARNING]
-    assert "asked us to wait" in caplog.text
-
-
-async def test_a_clean_refresh_is_logged(caplog: pytest.LogCaptureFixture) -> None:
-    with caplog.at_level(logging.INFO):
+async def test_a_refresh_that_returns_quietly_logs_nothing_itself() -> None:
+    # The job logs its own start, stop and finish; the wrapper only reports failure.
+    with structlog.testing.capture_logs() as logs:
         await run_in_background(Scripted(RefreshReport()))
 
-    assert "finished" in caplog.text
+    assert logs == []
 
 
 async def test_the_refresh_job_opens_its_own_session_for_each_run(
