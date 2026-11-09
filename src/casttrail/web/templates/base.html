@@ -37,6 +37,7 @@
           {% if user.is_admin %}
           <li><a href="/admin/users"{% if path.startswith("/admin/users") %} aria-current="page"{% endif %}>Users</a></li>
           <li><a href="/admin/refresh"{% if path.startswith("/admin/refresh") %} aria-current="page"{% endif %}>Refresh</a></li>
+          <li><a href="/admin/merges"{% if path.startswith("/admin/merges") %} aria-current="page"{% endif %}>Merge events</a></li>
           <li><a href="/admin/review"{% if path.startswith("/admin/review") %} aria-current="page"{% endif %}>Review guests</a></li>
           <li><a href="/admin/health"{% if path.startswith("/admin/health") %} aria-current="page"{% endif %}>Source health</a></li>
           {% endif %}
