@@ -252,7 +252,7 @@ Revisit these only after WP-8, each as its own slice.
 - [x] ⛔ GATE: 95% coverage on `identity/` and `matching/`
 
 ### WP-5 Second source
-- [ ] 5.1 Provider 2 parser against fixtures 🧪
+- [x] 5.1 Provider 2 parser against fixtures 🧪
 - [ ] 5.2 Strict event dedupe and optional `convention_merges` 🗄️ 🧪
 - [ ] 5.3 Cross-source guest handling; conflicts and unknowns displayed
 - [ ] 5.4 Admin merge for uncertain event pairs 👁️ DEMO
