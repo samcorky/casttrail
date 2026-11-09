@@ -1,54 +1,66 @@
 {% extends "base.html" %}
 {% block title %}Users · CastTrail{% endblock %}
 {% block content %}
-<h1>Users</h1>
+<h1 class="mb-3">Users</h1>
 {% if error %}
-<p role="alert"><strong>{{ error }}</strong></p>
+<div class="alert alert-danger" role="alert"><strong>{{ error }}</strong></div>
 {% endif %}
-<table>
-  <thead>
-    <tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr>
-  </thead>
-  <tbody>
-    {% for u in users %}
-    <tr>
-      <td>{{ u.display_name }}</td>
-      <td>{{ u.email }}</td>
-      <td>{{ "Admin" if u.is_admin else "User" }}</td>
-      <td>{{ "Active" if u.is_active else "Disabled" }}</td>
-      <td>
-        {% if u.is_active %}
-          {% if u.id != user.id %}
-          <form method="post" action="/admin/users/{{ u.id }}/disable">
-            <button type="submit" class="secondary">Disable</button>
-          </form>
-          {% endif %}
-        {% else %}
-        <form method="post" action="/admin/users/{{ u.id }}/enable">
-          <button type="submit">Enable</button>
-        </form>
-        {% endif %}
-        {% if not u.is_admin %}
-        <form method="post" action="/admin/users/{{ u.id }}/make-admin">
-          <button type="submit" class="outline">Make admin</button>
-        </form>
-        {% endif %}
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
-<article>
-  <h2>Add a user</h2>
-  <form method="post" action="/admin/users">
-    <label for="display_name">Name</label>
-    <input id="display_name" name="display_name" type="text" maxlength="100" required value="{{ form.get('display_name', '') }}">
-    <label for="email">Email</label>
-    <input id="email" name="email" type="email" autocomplete="off" required value="{{ form.get('email', '') }}">
-    <label for="password">Initial password</label>
-    <input id="password" name="password" type="password" autocomplete="new-password" minlength="12" required aria-describedby="password-help">
-    <small id="password-help">At least 12 characters. Tell the user to change it after signing in.</small>
-    <button type="submit">Add user</button>
-  </form>
-</article>
+<div class="table-responsive">
+  <table class="table align-middle">
+    <thead>
+      <tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td>{{ u.display_name }}</td>
+        <td>{{ u.email }}</td>
+        <td>{{ "Admin" if u.is_admin else "User" }}</td>
+        <td>{{ "Active" if u.is_active else "Disabled" }}</td>
+        <td>
+          <div class="d-flex flex-wrap gap-1">
+            {% if u.is_active %}
+              {% if u.id != user.id %}
+              <form method="post" action="/admin/users/{{ u.id }}/disable">
+                <button type="submit" class="btn btn-outline-secondary btn-sm">Disable</button>
+              </form>
+              {% endif %}
+            {% else %}
+            <form method="post" action="/admin/users/{{ u.id }}/enable">
+              <button type="submit" class="btn btn-primary btn-sm">Enable</button>
+            </form>
+            {% endif %}
+            {% if not u.is_admin %}
+            <form method="post" action="/admin/users/{{ u.id }}/make-admin">
+              <button type="submit" class="btn btn-outline-primary btn-sm">Make admin</button>
+            </form>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="card mt-4" style="max-width: 32rem">
+  <div class="card-body">
+    <h2 class="h5 card-title">Add a user</h2>
+    <form method="post" action="/admin/users">
+      <div class="mb-3">
+        <label class="form-label" for="display_name">Name</label>
+        <input class="form-control" id="display_name" name="display_name" type="text" maxlength="100" required value="{{ form.get('display_name', '') }}">
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="email">Email</label>
+        <input class="form-control" id="email" name="email" type="email" autocomplete="off" required value="{{ form.get('email', '') }}">
+      </div>
+      <div class="mb-3">
+        <label class="form-label" for="password">Initial password</label>
+        <input class="form-control" id="password" name="password" type="password" autocomplete="new-password" minlength="12" required aria-describedby="password-help">
+        <div class="form-text" id="password-help">At least 12 characters. Tell the user to change it after signing in.</div>
+      </div>
+      <button type="submit" class="btn btn-primary">Add user</button>
+    </form>
+  </div>
+</div>
 {% endblock %}

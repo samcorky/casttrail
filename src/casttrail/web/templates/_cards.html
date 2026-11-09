@@ -3,25 +3,35 @@
 {# One person, film or series: a picture (or its first letter), a name, a detail, and
    whatever controls the caller passes in. #}
 {% macro card(image_path, name, detail) %}
-<li>
-  <div class="card">
+<div class="col">
+  <div class="card h-100">
     {% set src = tmdb_image(image_path, "w185") %}
     {% if src %}
     <img src="{{ src }}" alt="" width="185" height="278" loading="lazy" referrerpolicy="no-referrer">
     {% else %}
     <div class="no-image" aria-hidden="true">{{ name[:1] }}</div>
     {% endif %}
-    <span><strong>{{ name }}</strong>{% if detail %}<small>{{ detail }}</small>{% endif %}</span>
-    {{ caller() if caller }}
+    <div class="card-body d-flex flex-column gap-2 p-2">
+      <span><strong>{{ name }}</strong>{% if detail %}<small>{{ detail }}</small>{% endif %}</span>
+      <div class="mt-auto">{{ caller() if caller }}</div>
+    </div>
   </div>
-</li>
+</div>
 {% endmacro %}
+
+{# The grid the cards sit in. #}
+{% macro grid_classes() %}row row-cols-2 row-cols-sm-3 row-cols-md-4 row-cols-xl-6 g-3{% endmacro %}
 
 {# Stop watching: used on the watchlist, and on a search result already watched. #}
 {% macro unwatch_form(watch_id, return_to, q="") %}
 <form method="post" action="/watches/{{ watch_id }}/delete">
   <input type="hidden" name="return_to" value="{{ return_to }}">
   <input type="hidden" name="q" value="{{ q }}">
-  <button type="submit" class="outline secondary compact">Stop watching</button>
+  <button type="submit" class="btn btn-outline-secondary btn-sm w-100">Stop watching</button>
 </form>
+{% endmacro %}
+
+{# Start watching: the two forms differ only in what they send. #}
+{% macro watch_button() %}
+<button type="submit" class="btn btn-primary btn-sm w-100">Watch</button>
 {% endmacro %}

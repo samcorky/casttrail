@@ -1,11 +1,11 @@
-{% from "_cards.html" import card, unwatch_form with context %}
+{% from "_cards.html" import card, unwatch_form, grid_classes, watch_button with context %}
 {% if message %}
-<p role="status">{{ message }}</p>
+<p role="status" class="text-body-secondary">{{ message }}</p>
 {% endif %}
 {% if people %}
-<section aria-labelledby="people-heading">
-  <h2 id="people-heading">People</h2>
-  <ul class="results">
+<section aria-labelledby="people-heading" class="mb-4">
+  <h2 id="people-heading" class="h4">People</h2>
+  <div class="{{ grid_classes() }}">
     {% for person in people %}
     {% call card(person.profile_path, person.name, person.known_for_department) %}
       {% set watch_id = watched_people.get(person.tmdb_id) %}
@@ -17,18 +17,18 @@
         <input type="hidden" name="tmdb_id" value="{{ person.tmdb_id }}">
         <input type="hidden" name="return_to" value="search">
         <input type="hidden" name="q" value="{{ q }}">
-        <button type="submit" class="compact">Watch</button>
+        {{ watch_button() }}
       </form>
       {% endif %}
     {% endcall %}
     {% endfor %}
-  </ul>
+  </div>
 </section>
 {% endif %}
 {% if films %}
-<section aria-labelledby="films-heading">
-  <h2 id="films-heading">Films</h2>
-  <ul class="results">
+<section aria-labelledby="films-heading" class="mb-4">
+  <h2 id="films-heading" class="h4">Films</h2>
+  <div class="{{ grid_classes() }}">
     {% for film in films %}
     {% call card(film.poster_path, film.title, film.release_year) %}
       {% set watch_id = watched_productions.get((film.media_type, film.tmdb_id)) %}
@@ -41,18 +41,18 @@
         <input type="hidden" name="tmdb_id" value="{{ film.tmdb_id }}">
         <input type="hidden" name="return_to" value="search">
         <input type="hidden" name="q" value="{{ q }}">
-        <button type="submit" class="compact">Watch</button>
+        {{ watch_button() }}
       </form>
       {% endif %}
     {% endcall %}
     {% endfor %}
-  </ul>
+  </div>
 </section>
 {% endif %}
 {% if series %}
-<section aria-labelledby="series-heading">
-  <h2 id="series-heading">Series</h2>
-  <ul class="results">
+<section aria-labelledby="series-heading" class="mb-4">
+  <h2 id="series-heading" class="h4">Series</h2>
+  <div class="{{ grid_classes() }}">
     {% for show in series %}
     {% call card(show.poster_path, show.title, show.release_year) %}
       {% set watch_id = watched_productions.get((show.media_type, show.tmdb_id)) %}
@@ -65,11 +65,11 @@
         <input type="hidden" name="tmdb_id" value="{{ show.tmdb_id }}">
         <input type="hidden" name="return_to" value="search">
         <input type="hidden" name="q" value="{{ q }}">
-        <button type="submit" class="compact">Watch</button>
+        {{ watch_button() }}
       </form>
       {% endif %}
     {% endcall %}
     {% endfor %}
-  </ul>
+  </div>
 </section>
 {% endif %}

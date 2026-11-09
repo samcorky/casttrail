@@ -3,37 +3,47 @@
 {% block title %}Events · CastTrail{% endblock %}
 {% block content %}
 {% set scope = "" if uk_only else "scope=all&" %}
-<h1>{{ "UK events" if uk_only else "All events" }}</h1>
-<p>
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h1 class="mb-0">{{ "UK events" if uk_only else "All events" }}</h1>
+  {% if uk_only %}
+  <a class="btn btn-outline-secondary btn-sm" href="/events?scope=all">Show all countries</a>
+  {% else %}
+  <a class="btn btn-outline-secondary btn-sm" href="/events">Show UK only</a>
+  {% endif %}
+</div>
+<p class="text-body-secondary">
   These are the conventions found for the people being watched. Nothing here is
   guessed: a missing date, place or status is shown as unknown.
-  {% if uk_only %}
-  <a href="/events?scope=all">Show all countries</a>
-  {% else %}
-  <a href="/events">Show UK only</a>
-  {% endif %}
 </p>
 {% if rows %}
-<table>
-  <thead>
-    <tr><th>Event</th><th>When</th><th>Where</th><th>Status</th><th>Guests</th></tr>
-  </thead>
-  <tbody>
-    {% for row in rows %}
-    <tr>
-      <td><a href="/events/{{ row.convention.id }}">{{ row.convention.name }}</a></td>
-      <td>{{ dates(row.convention) }}</td>
-      <td>{{ place(row.convention) }}</td>
-      <td>{{ status(row.convention.status) }}</td>
-      <td>{{ row.guests }}</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
-<p>
-  {% if page > 1 %}<a href="/events?{{ scope }}page={{ page - 1 }}">Earlier</a>{% endif %}
-  {% if more %}<a href="/events?{{ scope }}page={{ page + 1 }}">Later</a>{% endif %}
-</p>
+<div class="table-responsive">
+  <table class="table table-hover align-middle">
+    <thead>
+      <tr><th>Event</th><th class="d-none d-md-table-cell">When</th><th class="d-none d-md-table-cell">Where</th><th>Status</th><th class="text-end">Guests</th></tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>
+          <a href="/events/{{ row.convention.id }}">{{ row.convention.name }}</a>
+          {# On a phone the date and place sit under the name, so no column is lost. #}
+          <div class="d-md-none small text-body-secondary">{{ dates(row.convention) }} · {{ place(row.convention) }}</div>
+        </td>
+        <td class="d-none d-md-table-cell">{{ dates(row.convention) }}</td>
+        <td class="d-none d-md-table-cell">{{ place(row.convention) }}</td>
+        <td>{{ status(row.convention.status) }}</td>
+        <td class="text-end">{{ row.guests }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<nav aria-label="Pages">
+  <ul class="pagination">
+    {% if page > 1 %}<li class="page-item"><a class="page-link" href="/events?{{ scope }}page={{ page - 1 }}">Earlier</a></li>{% endif %}
+    {% if more %}<li class="page-item"><a class="page-link" href="/events?{{ scope }}page={{ page + 1 }}">Later</a></li>{% endif %}
+  </ul>
+</nav>
 {% else %}
 <p>No events found yet.
   {% if user.is_admin %}An administrator can run a <a href="/admin/refresh">refresh</a>.{% endif %}
