@@ -243,7 +243,7 @@ Revisit these only after WP-8, each as its own slice.
 - [ ] ⛔ GATE: double refresh gives no duplicates
 
 ### WP-4 Relevant appearances + identity
-- [ ] 4.1 Identity resolver (manual > shared ID > watched-name *Possible* > unresolved) 🧪
+- [x] 4.1 Identity resolver (manual > shared ID > watched-name *Possible* > unresolved) 🧪
 - [ ] 4.2 `identity_decisions` + rejection persistence 🗄️ 🧪
 - [ ] 4.3 Matching service and `matches` table with `match_key` 🗄️ 🧪
 - [ ] 4.4 "My relevant appearances" page with match reasons 👁️ DEMO
