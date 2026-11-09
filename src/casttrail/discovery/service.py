@@ -243,6 +243,8 @@ class DiscoveryService:
                 appearance = Appearance(
                     convention_id=convention.id,
                     external_identity_id=identity.id,
+                    # A link made by hand carries over to the guest's later events.
+                    person_id=identity.person_id,
                     created_at=now,
                 )
                 self._session.add(appearance)
