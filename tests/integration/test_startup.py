@@ -1,11 +1,12 @@
 import asyncio
-import logging
 import sqlite3
 from contextlib import closing
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
+import structlog
+import structlog.testing
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import select
@@ -179,18 +180,6 @@ async def test_an_uncreatable_data_folder_is_a_problem_not_a_crash(
     assert report.problems == [FOLDER_PROBLEM]
 
 
-class _Records(logging.Handler):
-    """Collects log lines. caplog cannot be used once an Alembic config file has been
-    loaded in the same test, because that resets the root logger's handlers."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.lines: list[str] = []
-
-    def emit(self, record: logging.LogRecord) -> None:
-        self.lines.append(self.format(record))
-
-
 async def test_a_failed_update_is_a_problem_that_names_no_detail(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -200,17 +189,12 @@ async def test_a_failed_update_is_a_problem_that_names_no_detail(
         raise RuntimeError(f"secret detail about {url}")
 
     monkeypatch.setattr(maintenance, "migrate", boom)
-    records = _Records()
-    logger = logging.getLogger("casttrail.startup")
-    logger.addHandler(records)
-    try:
+    with structlog.testing.capture_logs() as logs:
         report = await prepare_database(_settings(tmp_path))
-    finally:
-        logger.removeHandler(records)
 
     assert report.problems == [MIGRATE_PROBLEM]
     assert "secret detail" not in " ".join(report.problems)
-    assert any("database update failed" in line for line in records.lines)
+    assert "migration_failed" in [entry["event"] for entry in logs]
     assert maintenance.current_revision(file) == "0004"
     assert _backups(tmp_path) == ["before-migration.db"]
 
@@ -309,26 +293,25 @@ async def test_run_backup_prunes_old_daily_copies(tmp_path: Path) -> None:
 
 
 async def test_the_quiet_backup_logs_a_failure_and_does_not_raise(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
+    tmp_path: Path,
 ) -> None:
     settings = _settings(tmp_path)
 
-    with caplog.at_level(logging.INFO):
+    with structlog.testing.capture_logs() as logs:
         await run_backup_quietly(settings, "daily")
 
-    assert "daily backup failed" in caplog.text
+    assert "backup_failed" in [entry["event"] for entry in logs]
 
 
-async def test_the_quiet_backup_logs_success(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
-) -> None:
+async def test_the_quiet_backup_logs_success(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     await prepare_database(settings)
 
-    with caplog.at_level(logging.INFO):
+    with structlog.testing.capture_logs() as logs:
         await run_backup_quietly(settings, "daily")
 
-    assert "Backed up the database (daily)" in caplog.text
+    taken = [entry for entry in logs if entry["event"] == "backup_taken"]
+    assert [entry["reason"] for entry in taken] == ["daily"]
 
 
 async def test_the_daily_backup_is_scheduled_at_the_chosen_hour(
@@ -527,16 +510,10 @@ def test_an_existing_database_keeps_its_data_through_an_automatic_update(
 async def test_the_quiet_backup_says_nothing_when_backups_are_off(
     tmp_path: Path,
 ) -> None:
-    records = _Records()
-    logger = logging.getLogger("casttrail.startup")
-    logger.addHandler(records)
-    logger.setLevel(logging.INFO)
-    try:
+    with structlog.testing.capture_logs() as logs:
         await run_backup_quietly(_settings(tmp_path, backups_enabled=False), "daily")
-    finally:
-        logger.removeHandler(records)
 
-    assert records.lines == []
+    assert logs == []
     assert not (tmp_path / "data").exists()
 
 

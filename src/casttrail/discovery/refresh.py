@@ -1,8 +1,10 @@
 import json
+import time
 from dataclasses import asdict, dataclass
 from datetime import date, timedelta
 from typing import TYPE_CHECKING
 
+import structlog
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 
@@ -32,6 +34,8 @@ if TYPE_CHECKING:
 
     from casttrail.providers.rostercon import PersonPage
     from casttrail.providers.rostercon_client import PeopleIndex, RosterconFetcher
+
+logger = structlog.get_logger(__name__)
 
 JOB = "rostercon-refresh"
 # A run still marked running after this long is taken to have died.
@@ -104,23 +108,46 @@ class RosterconRefresh:
         """
         job = await self._acquire()
         if job is None:
+            logger.info("refresh_skipped", reason="already_running")
             return None
         # Read now: a rollback expires the object, and its id could not be reloaded.
         job_id = job.id
+        structlog.contextvars.bind_contextvars(job_id=str(job_id))
+        started = time.perf_counter()
+        logger.info("refresh_started")
         report = RefreshReport()
         try:
             await self._refresh(report)
-        except RosterconUnavailableError:
+        except RosterconUnavailableError as error:
             report.stopped = "Rostercon asked us to wait"
-        except ProviderError:
+            wait = error.retry_after
+            logger.warning(
+                "refresh_stopped",
+                reason="cooldown",
+                retry_after_s=wait.total_seconds() if wait else None,
+            )
+        except ProviderError as error:
             report.stopped = "Rostercon could not be read"
+            # The message holds no address or secret by design, so it is safe to log.
+            logger.warning(
+                "refresh_stopped",
+                reason="provider_error",
+                error=str(error),
+                cause=type(error.__cause__).__name__ if error.__cause__ else None,
+            )
         except BaseException:
             await self._session.rollback()
             report.stopped = "The refresh crashed"
+            logger.exception("refresh_crashed")
             await self._finish(job_id, report)
             raise
         await self._rematch(report)
         await self._finish(job_id, report)
+        logger.info(
+            "refresh_finished",
+            duration_s=round(time.perf_counter() - started, 1),
+            **asdict(report),
+        )
         return report
 
     async def _rematch(self, report: RefreshReport) -> None:
@@ -128,6 +155,12 @@ class RosterconRefresh:
         result = await MatchService(self._session, now=self._now).rematch()
         report.matches_added = result.added
         report.matches_removed = result.removed
+        logger.info(
+            "matches_updated",
+            added=result.added,
+            updated=result.updated,
+            removed=result.removed,
+        )
 
     async def _acquire(self) -> JobRun | None:
         now = self._now()
@@ -179,6 +212,7 @@ class RosterconRefresh:
         # what follows is minutes of fetching, and must not hold the lock while it does.
         await self._session.commit()
         report.people_watched = len(people)
+        logger.info("refresh_people", watched=len(people))
         if not people:
             return
         known = await self._index.people()
@@ -197,9 +231,13 @@ class RosterconRefresh:
         matches = match_people(name, known)
         if not matches:
             report.people_unmatched += 1
+            logger.info("person_unmatched", person=name)
             return
         if len(matches) > 1:
             report.people_ambiguous += 1
+            logger.warning(
+                "person_ambiguous", person=name, candidates=[m.slug for m in matches]
+            )
             return
         try:
             page = await self._fetcher.get(matches[0].url)
@@ -209,10 +247,14 @@ class RosterconRefresh:
                 rows += parse_event_rows((await self._fetcher.get(link)).text).events
         except RosterconUnavailableError:
             raise
-        except ProviderError:
+        except ProviderError as error:
             report.people_failed += 1
+            logger.warning("person_failed", person=name, error=str(error))
             return
         report.people_matched += 1
+        logger.info(
+            "person_matched", person=name, slug=matches[0].slug, events_listed=len(rows)
+        )
         for event in rows:
             events.setdefault(event.source_key, event)
 
@@ -236,14 +278,29 @@ class RosterconRefresh:
                 page = await self._fetcher.get(event.source_url)
             except RosterconUnavailableError:
                 raise
-            except ProviderError:
+            except ProviderError as error:
                 report.events_failed += 1
+                logger.warning(
+                    "event_fetch_failed", event_key=event.source_key, error=str(error)
+                )
                 continue
             report.events_fetched += 1
             parsed = parse_event_page(page.text, etag=page.etag)
             if parsed.convention is None:
                 report.events_unreadable += 1
+                # The page no longer parses: Rostercon may have changed its layout.
+                logger.warning(
+                    "event_unreadable", event_key=event.source_key, bytes=len(page.text)
+                )
                 continue
             result = await service.ingest(PROVIDER_ID, parsed.convention, parsed.guests)
             if result.changed:
                 report.events_changed += 1
+            logger.debug(
+                "event_ingested",
+                event_key=event.source_key,
+                guests=len(parsed.guests.items),
+                changed=result.changed,
+                created=result.convention_created,
+                merge_suggestions=result.merge_suggestions,
+            )

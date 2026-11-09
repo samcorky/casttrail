@@ -4,6 +4,7 @@ import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+import structlog
 from sqlalchemy import and_, delete, func, or_, select
 
 from casttrail.db import utc_now
@@ -25,6 +26,8 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from casttrail.providers.base import ConventionInfo, ListingResult
+
+logger = structlog.get_logger(__name__)
 
 # Which source is trusted most for a convention's details, best first. A source that
 # is not the best one listing a convention only fills in what is still unknown.
@@ -137,7 +140,30 @@ class DiscoveryService:
             await self._session.commit()
         except BaseException:
             await self._session.rollback()
+            logger.exception(
+                "ingest_failed", provider=provider, source_key=convention.source_key
+            )
             raise
+        logger.debug(
+            "ingested",
+            provider=provider,
+            source_key=convention.source_key,
+            convention_id=str(result.convention_id),
+            created=result.convention_created,
+            guests=len(listing.items),
+            guests_added=result.guests_added,
+            guests_unlisted=result.guests_unlisted,
+            complete=listing.complete,
+            changed=result.changed,
+            merge_suggestions=result.merge_suggestions,
+        )
+        if result.merge_suggestions:
+            logger.info(
+                "merge_suggested",
+                provider=provider,
+                source_key=convention.source_key,
+                suggestions=result.merge_suggestions,
+            )
         return result
 
     async def _ingest(

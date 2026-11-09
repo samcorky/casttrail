@@ -2,6 +2,7 @@ import uuid
 from typing import Annotated
 from urllib.parse import urlencode
 
+import structlog
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
@@ -19,6 +20,8 @@ from casttrail.web.dependencies import (
 )
 from casttrail.web.errors import PageError
 from casttrail.web.routes import templates
+
+logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/admin/review")
 
@@ -97,6 +100,11 @@ async def confirm(
     """
     if not await decisions.confirm(identity_id, person_id, admin.id):
         raise PageError("That guest or person was not found.", status_code=404)
+    logger.info(
+        "identity_confirmed",
+        guest=str(identity_id),
+        person=str(person_id),
+    )
     await matches.rematch()
     return _done("confirmed", q)
 
@@ -128,6 +136,11 @@ async def reject(
     """
     if not await decisions.reject(identity_id, person_id, admin.id):
         raise PageError("That guest or person was not found.", status_code=404)
+    logger.info(
+        "identity_rejected",
+        guest=str(identity_id),
+        person=str(person_id),
+    )
     await matches.rematch()
     return _done("rejected", q)
 
@@ -155,9 +168,9 @@ async def unlink(
     Raises:
         PageError: A 404 if the guest does not exist.
     """
-    del admin  # Only checked: any administrator may unlink.
     if not await decisions.unlink(identity_id):
         raise PageError("That guest was not found.", status_code=404)
+    logger.info("identity_unlinked", guest=str(identity_id))
     await matches.rematch()
     return _done("unlinked", q)
 
@@ -190,6 +203,12 @@ async def confirm_all(
     for item in single:
         await decisions.confirm(item.identity_id, item.person_id, admin.id)
     if not single:
+        logger.info("identity_confirm_all", confirmed=0)
         return _done("none")
+    logger.info(
+        "identity_confirm_all",
+        confirmed=len(single),
+        skipped=len(pending) - len(single),
+    )
     await matches.rematch()
     return _done("confirmed")

@@ -1,6 +1,6 @@
 import asyncio
-import logging
 
+import structlog
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, Response
 
@@ -8,7 +8,7 @@ from casttrail.providers.base import ProviderError
 from casttrail.web.dependencies import CurrentUser, MetadataDep, WatchServiceDep
 from casttrail.web.routes import templates
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/search")
 
@@ -67,9 +67,18 @@ async def search(
             )
         except ProviderError as error:
             # The message holds no credentials or URLs, so it is safe to log.
-            logger.warning("Search failed: %s", error)
+            logger.warning(
+                "tmdb_search_failed", query_length=len(query), error=str(error)
+            )
             context["message"] = "Search is unavailable right now. Try again shortly."
         else:
+            # The search term itself is never logged: only how long it was.
+            logger.info(
+                "search",
+                query_length=len(query),
+                people=len(people),
+                productions=len(productions),
+            )
             context["people"] = people
             context["films"] = [p for p in productions if p.media_type == "movie"]
             context["series"] = [p for p in productions if p.media_type == "tv"]

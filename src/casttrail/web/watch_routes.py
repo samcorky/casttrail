@@ -1,8 +1,8 @@
-import logging
 import uuid
 from typing import Annotated, Literal
 from urllib.parse import urlencode
 
+import structlog
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
@@ -16,7 +16,7 @@ from casttrail.web.dependencies import (
 from casttrail.web.errors import PageError
 from casttrail.web.routes import templates
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 router = APIRouter()
 
@@ -98,13 +98,14 @@ async def watch_person(
     try:
         person = await metadata.person(tmdb_id)
     except ProviderError as error:
-        logger.warning("Looking up a person failed: %s", error)
+        logger.warning("tmdb_person_lookup_failed", tmdb_id=tmdb_id, error=str(error))
         raise PageError(
             "TMDB is unavailable right now. Try again shortly.", status_code=502
         ) from error
     if person is None:
         raise PageError("TMDB has no such person.", status_code=404)
     await service.watch_person(user.id, person)
+    logger.info("watch_added", kind="person", tmdb_id=tmdb_id)
     await matches.rematch()
     return _back(return_to, q)
 
@@ -143,13 +144,19 @@ async def watch_production(
     try:
         production = await metadata.production(media_type, tmdb_id)
     except ProviderError as error:
-        logger.warning("Looking up a production failed: %s", error)
+        logger.warning(
+            "tmdb_production_lookup_failed",
+            media_type=media_type,
+            tmdb_id=tmdb_id,
+            error=str(error),
+        )
         raise PageError(
             "TMDB is unavailable right now. Try again shortly.", status_code=502
         ) from error
     if production is None:
         raise PageError("TMDB has no such film or series.", status_code=404)
     await service.watch_production(user.id, production)
+    logger.info("watch_added", kind=media_type, tmdb_id=tmdb_id)
     return _back(return_to, q)
 
 
@@ -180,5 +187,6 @@ async def unwatch(
     """
     if not await service.unwatch(user.id, watch_id):
         raise PageError("That watch was not found.", status_code=404)
+    logger.info("watch_removed", watch_id=str(watch_id))
     await matches.rematch()
     return _back(return_to, q)
