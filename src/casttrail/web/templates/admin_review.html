@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Review guests · CastTrail{% endblock %}
+{% block content %}
+<h1>Review guests</h1>
+{% if notice %}<p role="status"><strong>{{ notice }}</strong></p>{% endif %}
+<p>
+  A guest is only <em>Possible</em> until you confirm them. Confirming applies to
+  everyone, and rejecting stops that person being suggested for the guest again.
+</p>
+
+<h2>Waiting to be confirmed</h2>
+{% if suggestions %}
+<form method="post" action="/admin/review/confirm-all">
+  <button type="submit" class="secondary">Confirm all exact-name matches</button>
+</form>
+<table>
+  <thead><tr><th>Guest</th><th>Watched person</th><th>Events</th><th>Actions</th></tr></thead>
+  <tbody>
+    {% for s in suggestions %}
+    <tr>
+      <td>{{ s.guest_name }}</td>
+      <td>{{ s.person_name }}</td>
+      <td>{{ s.events }}</td>
+      <td>
+        <form method="post" action="/admin/review/confirm">
+          <input type="hidden" name="identity_id" value="{{ s.identity_id }}">
+          <input type="hidden" name="person_id" value="{{ s.person_id }}">
+          <button type="submit">Confirm</button>
+        </form>
+        <form method="post" action="/admin/review/reject">
+          <input type="hidden" name="identity_id" value="{{ s.identity_id }}">
+          <input type="hidden" name="person_id" value="{{ s.person_id }}">
+          <button type="submit" class="outline">Reject</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<p>"Confirm all" skips a guest with more than one suggestion.</p>
+{% else %}
+<p>Nothing is waiting.</p>
+{% endif %}
+
+<h2>Linked guests</h2>
+{% if linked %}
+<table>
+  <thead><tr><th>Guest</th><th>Linked to</th><th>Actions</th></tr></thead>
+  <tbody>
+    {% for g in linked %}
+    <tr>
+      <td>{{ g.guest_name }}</td>
+      <td>{{ g.person_name }}</td>
+      <td>
+        <form method="post" action="/admin/review/unlink">
+          <input type="hidden" name="identity_id" value="{{ g.identity_id }}">
+          <button type="submit" class="outline">Unlink</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No guests are linked.</p>
+{% endif %}
+
+<h2>Find a guest to link</h2>
+<form method="get" action="/admin/review" role="search">
+  <input type="search" name="q" value="{{ q }}" maxlength="100" placeholder="Part of a name" aria-label="Guest name">
+  <button type="submit">Search</button>
+</form>
+{% if q %}
+  {% if found %}
+  <table>
+    <thead><tr><th>Guest</th><th>Linked to</th><th>Link to</th></tr></thead>
+    <tbody>
+      {% for g in found %}
+      <tr>
+        <td>{{ g.guest_name }}</td>
+        <td>{{ g.person_name or "Nobody" }}</td>
+        <td>
+          <form method="post" action="/admin/review/confirm">
+            <input type="hidden" name="identity_id" value="{{ g.identity_id }}">
+            <input type="hidden" name="q" value="{{ q }}">
+            <select name="person_id" required aria-label="Person">
+              {% for id, name in people %}
+              <option value="{{ id }}"{% if id == g.person_id %} selected{% endif %}>{{ name }}</option>
+              {% endfor %}
+            </select>
+            <button type="submit">Link</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No guest has that name.</p>
+  {% endif %}
+{% endif %}
+{% endblock %}

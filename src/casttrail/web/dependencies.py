@@ -9,6 +9,7 @@ from casttrail.auth.models import User
 from casttrail.auth.service import AuthService
 from casttrail.auth.throttle import ThrottlePolicy
 from casttrail.config import Settings
+from casttrail.identity.decisions import DecisionService
 from casttrail.matching.service import MatchService
 from casttrail.providers.base import MetadataProvider
 from casttrail.watching.service import WatchService
@@ -200,3 +201,18 @@ def get_match_service(session: SessionDep) -> MatchService:
 
 
 MatchServiceDep = Annotated[MatchService, Depends(get_match_service)]
+
+
+def get_decision_service(session: SessionDep) -> DecisionService:
+    """Build the decision service for a request.
+
+    Args:
+        session: The request's database session.
+
+    Returns:
+        A decision service bound to the session.
+    """
+    return DecisionService(session)
+
+
+DecisionServiceDep = Annotated[DecisionService, Depends(get_decision_service)]
