@@ -3,69 +3,77 @@
 {% block title %}{{ detail.convention.name }} · CastTrail{% endblock %}
 {% block content %}
 {% set c = detail.convention %}
-<p><a href="/events">&larr; Events</a></p>
-<h1>{{ c.name }}</h1>
-<dl>
-  <dt>When</dt><dd>{{ dates(c) }}</dd>
-  <dt>Where</dt><dd>{{ place(c) }}{% if c.region %} ({{ c.region }}){% endif %}</dd>
-  <dt>Status</dt><dd>{{ status(c.status) }}</dd>
-  <dt>Organiser</dt><dd>{{ c.organizer or "Unknown" }}</dd>
-</dl>
+<nav aria-label="Breadcrumb"><a href="/events">&larr; Events</a></nav>
+<h1 class="mt-2 mb-3">{{ c.name }}</h1>
+<div class="card mb-4">
+  <div class="card-body">
+    <dl class="row mb-0">
+      <dt class="col-sm-3">When</dt><dd class="col-sm-9">{{ dates(c) }}</dd>
+      <dt class="col-sm-3">Where</dt><dd class="col-sm-9">{{ place(c) }}{% if c.region %} ({{ c.region }}){% endif %}</dd>
+      <dt class="col-sm-3">Status</dt><dd class="col-sm-9">{{ status(c.status) }}</dd>
+      <dt class="col-sm-3">Organiser</dt><dd class="col-sm-9 mb-0">{{ c.organizer or "Unknown" }}</dd>
+    </dl>
+  </div>
+</div>
 
-<h2>Sources</h2>
+<h2 class="h4">Sources</h2>
 {% if detail.conflicts %}
-<p role="alert"><strong>The sources disagree about the
+<div class="alert alert-warning" role="alert"><strong>The sources disagree about the
   {{ detail.conflicts | sort | join(", ") }}.</strong> The first source below is used
-  for the details above.</p>
+  for the details above.</div>
 {% endif %}
 {% if detail.sources %}
-<table>
-  <thead><tr><th>Source</th><th>Name</th><th>When</th><th>Where</th></tr></thead>
-  <tbody>
-    {% for s in detail.sources %}
-    <tr>
-      <td><a href="{{ s.url }}" rel="noreferrer">{{ s.label }}</a></td>
-      <td>{{ s.name or "Unknown" }}</td>
-      <td>
-        {% if s.start_date and s.end_date and s.end_date != s.start_date %}{{ s.start_date.strftime("%d %b %Y") }} to {{ s.end_date.strftime("%d %b %Y") }}
-        {% elif s.start_date %}{{ s.start_date.strftime("%d %b %Y") }}
-        {% else %}Date unknown{% endif %}
-      </td>
-      <td>{{ s.venue or "Place unknown" }}</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+<div class="table-responsive">
+  <table class="table align-middle">
+    <thead><tr><th>Source</th><th>Name</th><th>When</th><th>Where</th></tr></thead>
+    <tbody>
+      {% for s in detail.sources %}
+      <tr>
+        <td><a href="{{ s.url }}" rel="noreferrer">{{ s.label }}</a></td>
+        <td>{{ s.name or "Unknown" }}</td>
+        <td>
+          {% if s.start_date and s.end_date and s.end_date != s.start_date %}{{ s.start_date.strftime("%d %b %Y") }} to {{ s.end_date.strftime("%d %b %Y") }}
+          {% elif s.start_date %}{{ s.start_date.strftime("%d %b %Y") }}
+          {% else %}Date unknown{% endif %}
+        </td>
+        <td>{{ s.venue or "Place unknown" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
 {% else %}
 <p>No source is recorded for this event.</p>
 {% endif %}
 
-<h2>Guests</h2>
+<h2 class="h4 mt-4">Guests</h2>
 {% if detail.guests %}
-<table>
-  <thead><tr><th>Name</th><th>Status</th><th>Listed by</th></tr></thead>
-  <tbody>
-    {% for g in detail.guests %}
-    <tr>
-      <td>{{ g.name }}</td>
-      <td>
-        {% if g.verdict == "cancelled" %}<strong>Cancelled</strong>
-        {% elif g.verdict == "unlisted" %}No longer listed
-        {% elif g.verdict == "postponed" %}Postponed
-        {% elif g.verdict == "confirmed" %}Confirmed
-        {% else %}Listed{% endif %}
-        {% if g.disagree %}<br><strong>Sources disagree</strong>{% endif %}
-      </td>
-      <td>
-        {% for s in g.sources %}
-        <a href="{{ s.url }}" rel="noreferrer">{{ s.label }}</a>{% if s.status == "cancelled" %} (cancelled){% elif s.status == "postponed" %} (postponed){% elif not s.listed %} (no longer listed){% endif %}{% if not loop.last %}, {% endif %}
-        {% endfor %}
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
-<p>"No longer listed" only means the source stopped listing the guest. It is not a cancellation. Comiconomicon never marks a guest as no longer listed, because its lists can change.</p>
+<div class="table-responsive">
+  <table class="table table-hover align-middle">
+    <thead><tr><th>Name</th><th>Status</th><th>Listed by</th></tr></thead>
+    <tbody>
+      {% for g in detail.guests %}
+      <tr>
+        <td>{{ g.name }}</td>
+        <td>
+          {% if g.verdict == "cancelled" %}<strong>Cancelled</strong>
+          {% elif g.verdict == "unlisted" %}No longer listed
+          {% elif g.verdict == "postponed" %}Postponed
+          {% elif g.verdict == "confirmed" %}Confirmed
+          {% else %}Listed{% endif %}
+          {% if g.disagree %}<br><strong>Sources disagree</strong>{% endif %}
+        </td>
+        <td>
+          {% for s in g.sources %}
+          <a href="{{ s.url }}" rel="noreferrer">{{ s.label }}</a>{% if s.status == "cancelled" %} (cancelled){% elif s.status == "postponed" %} (postponed){% elif not s.listed %} (no longer listed){% endif %}{% if not loop.last %}, {% endif %}
+          {% endfor %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="text-body-secondary"><small>"No longer listed" only means the source stopped listing the guest. It is not a cancellation. Comiconomicon never marks a guest as no longer listed, because its lists can change.</small></p>
 {% else %}
 <p>No guests are known for this event.</p>
 {% endif %}

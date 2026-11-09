@@ -145,40 +145,90 @@ def test_the_status_page_is_public_and_leads_back_home(client: TestClient) -> No
     assert 'href="/"' in response.text
 
 
-def test_signed_in_pages_have_a_menu_button_that_starts_hidden(
+def test_signed_in_pages_have_a_collapsing_menu_with_a_labelled_button(
     client: TestClient,
 ) -> None:
     _sign_in(client, "bob@example.com")
 
     page = client.get("/").text
 
-    assert 'class="nav-toggle outline secondary" hidden' in page
+    assert 'class="navbar-toggler"' in page
+    assert 'data-bs-toggle="collapse"' in page
+    assert 'data-bs-target="#nav-menu"' in page
     assert 'aria-controls="nav-menu"' in page
     assert 'aria-expanded="false"' in page
-    assert '<ul id="nav-menu">' in page
-    assert "/static/js/nav.js" in page
+    assert 'aria-label="Menu"' in page
+    assert 'id="nav-menu"' in page
+    assert "/static/js/bootstrap.bundle.min.js" in page
 
 
-def test_the_menu_button_is_labelled_for_screen_readers(client: TestClient) -> None:
+def test_the_sign_in_page_has_no_menu_button(client: TestClient) -> None:
+    page = client.get("/login").text
+
+    assert "navbar-toggler" not in page
+    assert 'id="nav-menu"' not in page
+
+
+def test_the_menu_holds_the_pages_people_use_and_the_account_menu(
+    client: TestClient,
+) -> None:
     _sign_in(client, "bob@example.com")
 
     page = client.get("/").text
 
-    assert '<span class="visually-hidden">Menu</span>' in page
-    assert '<span aria-hidden="true">&#9776;</span>' in page
+    for link in ("/watchlist", "/appearances", "/events", "/search"):
+        assert f'href="{link}"' in page
+    assert 'href="/account/password"' in page
+    assert 'href="/status"' in page
+    assert 'action="/logout"' in page
+    assert ">Sign out</button>" in page
+    assert "Bob" in page
 
 
-def test_the_sign_in_page_has_no_menu_button(client: TestClient) -> None:
-    assert 'class="nav-toggle' not in client.get("/login").text
+def test_an_ordinary_user_does_not_see_the_admin_menu(client: TestClient) -> None:
+    _sign_in(client, "bob@example.com")
+
+    page = client.get("/").text
+
+    assert "/admin/" not in page
+    assert ">Admin</a>" not in page
 
 
-def test_the_nav_script_and_styles_are_served(client: TestClient) -> None:
-    script = client.get("/static/js/nav.js")
-    css = client.get("/static/css/app.css")
+def test_an_admin_sees_every_admin_page_in_one_menu(client: TestClient) -> None:
+    _sign_in(client, "alice@example.com")
 
+    page = client.get("/").text
+
+    assert ">Admin</a>" in page
+    for link in (
+        "/admin/users",
+        "/admin/refresh",
+        "/admin/merges",
+        "/admin/review",
+        "/admin/health",
+    ):
+        assert f'href="{link}"' in page
+
+
+def test_the_current_page_is_marked_in_the_menu(client: TestClient) -> None:
+    _sign_in(client, "alice@example.com")
+
+    page = client.get("/admin/users").text
+
+    assert 'href="/admin/users" aria-current="page"' in page
+    assert 'class="dropdown-item active" href="/admin/users"' in page
+    assert 'class="nav-link dropdown-toggle active"' in page
+    assert page.count('aria-current="page"') == 1
+
+
+def test_the_theme_follows_the_device(client: TestClient) -> None:
+    page = client.get("/login").text
+    script = client.get("/static/js/theme.js")
+
+    assert 'data-bs-theme="light"' in page
+    assert page.index("/static/js/theme.js") < page.index(
+        "/static/css/bootstrap.min.css"
+    )
     assert script.status_code == 200
-    assert "javascript" in script.headers["content-type"]
-    assert "aria-expanded" in script.text
-    assert "Escape" in script.text
-    assert ".js #nav-menu" in css.text
-    assert ".visually-hidden" in css.text
+    assert "prefers-color-scheme: dark" in script.text
+    assert "data-bs-theme" in script.text

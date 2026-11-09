@@ -66,11 +66,19 @@ def test_a_fresh_database_is_migrated_on_start(client: TestClient) -> None:
 
 
 def test_static_assets_are_served_locally(client: TestClient) -> None:
-    css = client.get("/static/css/pico.min.css")
-    js = client.get("/static/js/htmx.min.js")
+    for path in (
+        "css/bootstrap.min.css",
+        "js/bootstrap.bundle.min.js",
+        "js/htmx.min.js",
+        "js/theme.js",
+        "css/app.css",
+    ):
+        assert client.get(f"/static/{path}").status_code == 200, path
 
-    assert css.status_code == 200
-    assert js.status_code == 200
+
+def test_the_old_framework_is_gone(client: TestClient) -> None:
+    assert client.get("/static/css/pico.min.css").status_code == 404
+    assert client.get("/static/js/nav.js").status_code == 404
 
 
 def test_api_docs_are_disabled_by_default(client: TestClient) -> None:

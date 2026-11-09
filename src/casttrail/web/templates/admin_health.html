@@ -1,21 +1,23 @@
 {% extends "base.html" %}
 {% block title %}Source health · CastTrail{% endblock %}
 {% block content %}
-<h1>Source health</h1>
-<p>A page that cannot be read never removes what is already stored. Warnings mean look at it, not that data was lost.</p>
-{% if notice %}<p role="status"><strong>{{ notice }}</strong></p>{% endif %}
+<h1 class="mb-3">Source health</h1>
+<p class="text-body-secondary">A page that cannot be read never removes what is already stored. Warnings mean look at it, not that data was lost.</p>
+{% if notice %}<div class="alert alert-info" role="status"><strong>{{ notice }}</strong></div>{% endif %}
 {% if warnings %}
-<section>
-  <h2>Needs a look</h2>
-  <ul role="alert">
-    {% for w in warnings %}<li><strong>{{ w }}</strong></li>{% endfor %}
-  </ul>
-  <p>These were found when the app started. The details are in the server log.</p>
+<section class="mb-4">
+  <h2 class="h4">Needs a look</h2>
+  <div class="alert alert-warning" role="alert">
+    <ul class="mb-0">
+      {% for w in warnings %}<li><strong>{{ w }}</strong></li>{% endfor %}
+    </ul>
+  </div>
+  <p class="text-body-secondary">These were found when the app started. The details are in the server log.</p>
 </section>
 {% endif %}
 
-<section>
-  <h2>Backups</h2>
+<section class="mb-4">
+  <h2 class="h4">Backups</h2>
   {% if backups_enabled %}
   <p>
     A copy of the database is taken before any update, once a day, and at startup
@@ -23,24 +25,26 @@
     copies taken by hand, at startup or before an update are never deleted
     automatically.
   </p>
-  <form method="post" action="/admin/backups/now">
-    <button type="submit">Back up now</button>
+  <form method="post" action="/admin/backups/now" class="mb-3">
+    <button type="submit" class="btn btn-primary">Back up now</button>
   </form>
   {% if backups %}
-  <table>
-    <thead><tr><th>Taken (UTC)</th><th>Why</th><th>Size</th><th>File</th></tr></thead>
-    <tbody>
-      {% for b in backups %}
-      <tr>
-        <td>{{ b.taken_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
-        <td>{{ b.reason|replace("-", " ")|capitalize }}</td>
-        <td>{{ (b.size / 1024)|round(0, "ceil")|int }} KB</td>
-        <td><code>{{ b.name }}</code></td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  <p>To restore: stop the app, copy a file over the database file, and start it again.</p>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle">
+      <thead><tr><th>Taken (UTC)</th><th>Why</th><th class="text-end">Size</th><th>File</th></tr></thead>
+      <tbody>
+        {% for b in backups %}
+        <tr>
+          <td>{{ b.taken_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
+          <td>{{ b.reason|replace("-", " ")|capitalize }}</td>
+          <td class="text-end">{{ (b.size / 1024)|round(0, "ceil")|int }} KB</td>
+          <td><code>{{ b.name }}</code></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="text-body-secondary"><small>To restore: stop the app, copy a file over the database file, and start it again.</small></p>
   {% else %}
   <p>No backups yet.</p>
   {% endif %}
@@ -50,21 +54,23 @@
 </section>
 
 {% for s in sources %}
-<section>
-  <h2>{{ s.provider|capitalize }}</h2>
+<section class="mb-4">
+  <h2 class="h4">{{ s.provider|capitalize }}</h2>
   {% if s.warnings %}
-  <ul role="alert">
-    {% for w in s.warnings %}<li><strong>{{ w }}</strong></li>{% endfor %}
-  </ul>
+  <div class="alert alert-warning" role="alert">
+    <ul class="mb-0">
+      {% for w in s.warnings %}<li><strong>{{ w }}</strong></li>{% endfor %}
+    </ul>
+  </div>
   {% else %}
-  <p role="status">No problems seen.</p>
+  <div class="alert alert-success" role="status">No problems seen.</div>
   {% endif %}
-  <dl>
-    <dt>Conventions stored</dt><dd>{{ s.conventions }}</dd>
-    <dt>Last page read</dt><dd>{{ s.last_page_at.strftime("%Y-%m-%d %H:%M") ~ " UTC" if s.last_page_at else "Never" }}</dd>
-    <dt>Last refresh</dt><dd>{% if s.last_run_at %}{{ s.last_run_at.strftime("%Y-%m-%d %H:%M") }} UTC, {{ s.last_run_status }}{% else %}Never{% endif %}</dd>
-    <dt>Last successful refresh</dt><dd>{{ s.last_success_at.strftime("%Y-%m-%d %H:%M") ~ " UTC" if s.last_success_at else "Never" }}</dd>
-    <dt>Failed refreshes in a row</dt><dd>{{ s.failures_in_a_row }}</dd>
+  <dl class="row">
+    <dt class="col-sm-4 col-lg-3">Conventions stored</dt><dd class="col-sm-8 col-lg-9">{{ s.conventions }}</dd>
+    <dt class="col-sm-4 col-lg-3">Last page read</dt><dd class="col-sm-8 col-lg-9">{{ s.last_page_at.strftime("%Y-%m-%d %H:%M") ~ " UTC" if s.last_page_at else "Never" }}</dd>
+    <dt class="col-sm-4 col-lg-3">Last refresh</dt><dd class="col-sm-8 col-lg-9">{% if s.last_run_at %}{{ s.last_run_at.strftime("%Y-%m-%d %H:%M") }} UTC, {{ s.last_run_status }}{% else %}Never{% endif %}</dd>
+    <dt class="col-sm-4 col-lg-3">Last successful refresh</dt><dd class="col-sm-8 col-lg-9">{{ s.last_success_at.strftime("%Y-%m-%d %H:%M") ~ " UTC" if s.last_success_at else "Never" }}</dd>
+    <dt class="col-sm-4 col-lg-3">Failed refreshes in a row</dt><dd class="col-sm-8 col-lg-9">{{ s.failures_in_a_row }}</dd>
   </dl>
   <p><a href="/admin/refresh">Refresh runs</a></p>
 </section>

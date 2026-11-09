@@ -392,6 +392,15 @@ def test_the_stylesheet_is_served(client: TestClient) -> None:
     css = client.get("/static/css/app.css")
 
     assert css.status_code == 200
-    assert ".results" in css.text
-    assert "flex-wrap" in css.text
+    assert ".no-image" in css.text
+    assert "aspect-ratio" in css.text
+    # The picture is rounded with its card, not square inside it.
+    assert (
+        css.text.count("border-top-left-radius: var(--bs-card-inner-border-radius)")
+        == 1
+    )
+    assert (
+        css.text.count("border-top-right-radius: var(--bs-card-inner-border-radius)")
+        == 1
+    )
     assert "/static/css/app.css" in client.get("/search").text
