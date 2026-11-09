@@ -1,8 +1,6 @@
 {% extends "base.html" %}
 {% block title %}CastTrail{% endblock %}
 {% block content %}
-<article>
-  <p role="alert"><strong>{{ message }}</strong></p>
-  <p><a href="/">Back to the dashboard</a></p>
-</article>
+<div class="alert alert-warning" role="alert"><strong>{{ message }}</strong></div>
+<p><a href="/">Back to the dashboard</a></p>
 {% endblock %}

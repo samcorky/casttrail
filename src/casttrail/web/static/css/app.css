@@ -1,109 +1,54 @@
-/* CastTrail's own styles, on top of Pico. */
+/* CastTrail's own styles, on top of Bootstrap. Keep this small: use Bootstrap's classes. */
 
-.results {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
-  gap: 1.25rem 1rem;
-  padding: 0;
-  list-style: none;
-}
-
-.results li {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.card {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-}
-
-.card img,
-.card .no-image {
+/* A poster or photo: always 2:3, whether or not there is a picture. */
+.card > img,
+.card > .no-image {
   width: 100%;
   aspect-ratio: 2 / 3;
-  border-radius: var(--pico-border-radius);
-  background: var(--pico-muted-border-color);
   object-fit: cover;
+  background: var(--bs-secondary-bg);
 }
 
-.card .no-image {
+.card > .no-image {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--pico-muted-color);
+  color: var(--bs-secondary-color);
   font-size: 2.5rem;
 }
 
 .card small {
   display: block;
-  color: var(--pico-muted-color);
+  color: var(--bs-secondary-color);
 }
 
-/* Without JavaScript the navigation just wraps onto more lines on a narrow screen. */
-header nav,
-header nav ul {
-  flex-wrap: wrap;
-}
-
-header nav ul {
-  row-gap: 0.25rem;
-}
-
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
-.nav-toggle {
-  width: auto;
+/* Forms inside menus: Bootstrap styles the button, not the form around it. */
+.navbar-nav .dropdown-menu form {
   margin: 0;
-  padding: 0.35rem 0.75rem;
-  font-size: 1.25rem;
-  line-height: 1;
 }
 
-/* With JavaScript, a narrow screen shows a menu button and hides the links until it
-   is pressed. A wide screen never shows the button. */
-@media (max-width: 767px) {
-  .js .nav-toggle:not([hidden]) {
-    display: inline-block;
-  }
-
-  .js #nav-menu {
-    display: none;
-    flex-basis: 100%;
-    flex-direction: column;
-    align-items: flex-start;
-    margin-inline: 0;
-  }
-
-  .js #nav-menu[data-open] {
-    display: flex;
-  }
+/* The sign-out button sits in the menu and should look like the links around it. */
+.dropdown-item[type="submit"] {
+  width: 100%;
 }
 
-@media (min-width: 768px) {
-  .nav-toggle {
-    display: none !important;
-  }
-}
-
+/* Forms inside table cells and cards sit side by side without extra spacing. */
+td form,
 .card form {
   margin: 0;
 }
 
-.compact {
-  width: 100%;
-  margin: 0;
-  padding: 0.3rem 0.5rem;
-  font-size: 0.85rem;
+td form + form {
+  margin-top: 0.25rem;
+}
+
+/* htmx adds this class while a request is running. */
+.htmx-indicator {
+  opacity: 0;
+  transition: opacity 150ms ease-in;
+}
+
+.htmx-request .htmx-indicator,
+.htmx-request.htmx-indicator {
+  opacity: 1;
 }

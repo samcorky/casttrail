@@ -2,74 +2,78 @@
 {% from "_event_bits.html" import dates, place, status %}
 {% block title %}Merge events · CastTrail{% endblock %}
 {% macro side(s) %}
-<dl>
-  <dt>Name</dt><dd>{{ s.convention.name }}</dd>
-  <dt>When</dt><dd>{{ dates(s.convention) }}</dd>
-  <dt>Where</dt><dd>{{ place(s.convention) }}</dd>
-  <dt>Status</dt><dd>{{ status(s.convention.status) }}</dd>
-  <dt>Listed by</dt><dd>{{ s.sources | join(", ") or "Nobody" }}</dd>
-  <dt>Guests</dt><dd>{{ s.guests }}</dd>
+<dl class="row mb-2">
+  <dt class="col-4">Name</dt><dd class="col-8">{{ s.convention.name }}</dd>
+  <dt class="col-4">When</dt><dd class="col-8">{{ dates(s.convention) }}</dd>
+  <dt class="col-4">Where</dt><dd class="col-8">{{ place(s.convention) }}</dd>
+  <dt class="col-4">Status</dt><dd class="col-8">{{ status(s.convention.status) }}</dd>
+  <dt class="col-4">Listed by</dt><dd class="col-8">{{ s.sources | join(", ") or "Nobody" }}</dd>
+  <dt class="col-4">Guests</dt><dd class="col-8 mb-0">{{ s.guests }}</dd>
 </dl>
 <p><a href="/events/{{ s.convention.id }}">Open this event</a></p>
 {% endmacro %}
 {% block content %}
-<h1>Merge events</h1>
-{% if notice %}<p role="status"><strong>{{ notice }}</strong></p>{% endif %}
-<p>
+<h1 class="mb-3">Merge events</h1>
+{% if notice %}<div class="alert alert-info" role="status"><strong>{{ notice }}</strong></div>{% endif %}
+<p class="text-body-secondary">
   These events look alike but were not certain enough to join automatically. Joining
   keeps the event you choose, moves the other's sources and guests onto it, fills in
   anything the kept event does not know, and deletes the other. It cannot be undone.
 </p>
 
-<h2>Might be the same event ({{ suggested | length }})</h2>
+<h2 class="h4 mt-4">Might be the same event ({{ suggested | length }})</h2>
 {% for pair in suggested %}
-<article>
-  <header>{{ pair.reason }}</header>
-  <div class="grid">
-    <section>
-      <h3>One</h3>
-      {{ side(pair.first) }}
-      <form method="post" action="/admin/merges/{{ pair.pair_id }}/merge">
-        <input type="hidden" name="keep" value="{{ pair.first.convention.id }}">
-        <button type="submit">Same event: keep this one</button>
-      </form>
-    </section>
-    <section>
-      <h3>Two</h3>
-      {{ side(pair.second) }}
-      <form method="post" action="/admin/merges/{{ pair.pair_id }}/merge">
-        <input type="hidden" name="keep" value="{{ pair.second.convention.id }}">
-        <button type="submit">Same event: keep this one</button>
-      </form>
-    </section>
+<div class="card mb-3">
+  <div class="card-header">{{ pair.reason }}</div>
+  <div class="card-body">
+    <div class="row g-4">
+      <section class="col-md-6">
+        <h3 class="h6 text-uppercase text-body-secondary">One</h3>
+        {{ side(pair.first) }}
+        <form method="post" action="/admin/merges/{{ pair.pair_id }}/merge">
+          <input type="hidden" name="keep" value="{{ pair.first.convention.id }}">
+          <button type="submit" class="btn btn-primary w-100">Same event: keep this one</button>
+        </form>
+      </section>
+      <section class="col-md-6">
+        <h3 class="h6 text-uppercase text-body-secondary">Two</h3>
+        {{ side(pair.second) }}
+        <form method="post" action="/admin/merges/{{ pair.pair_id }}/merge">
+          <input type="hidden" name="keep" value="{{ pair.second.convention.id }}">
+          <button type="submit" class="btn btn-primary w-100">Same event: keep this one</button>
+        </form>
+      </section>
+    </div>
   </div>
-  <footer>
+  <div class="card-footer">
     <form method="post" action="/admin/merges/{{ pair.pair_id }}/reject">
-      <button type="submit" class="outline secondary">Different events</button>
+      <button type="submit" class="btn btn-outline-secondary w-100">Different events</button>
     </form>
-  </footer>
-</article>
+  </div>
+</div>
 {% else %}
 <p>Nothing is waiting.</p>
 {% endfor %}
 
 {% if rejected %}
-<h2>Marked as different ({{ rejected | length }})</h2>
-<table>
-  <thead><tr><th>One</th><th>Two</th><th>Action</th></tr></thead>
-  <tbody>
-    {% for pair in rejected %}
-    <tr>
-      <td><a href="/events/{{ pair.first.convention.id }}">{{ pair.first.convention.name }}</a>, {{ dates(pair.first.convention) }}</td>
-      <td><a href="/events/{{ pair.second.convention.id }}">{{ pair.second.convention.name }}</a>, {{ dates(pair.second.convention) }}</td>
-      <td>
-        <form method="post" action="/admin/merges/{{ pair.pair_id }}/reconsider">
-          <button type="submit" class="outline">Suggest again</button>
-        </form>
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+<h2 class="h4 mt-5">Marked as different ({{ rejected | length }})</h2>
+<div class="table-responsive">
+  <table class="table align-middle">
+    <thead><tr><th>One</th><th>Two</th><th>Action</th></tr></thead>
+    <tbody>
+      {% for pair in rejected %}
+      <tr>
+        <td><a href="/events/{{ pair.first.convention.id }}">{{ pair.first.convention.name }}</a>, {{ dates(pair.first.convention) }}</td>
+        <td><a href="/events/{{ pair.second.convention.id }}">{{ pair.second.convention.name }}</a>, {{ dates(pair.second.convention) }}</td>
+        <td>
+          <form method="post" action="/admin/merges/{{ pair.pair_id }}/reconsider">
+            <button type="submit" class="btn btn-outline-primary btn-sm">Suggest again</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
 {% endif %}
 {% endblock %}

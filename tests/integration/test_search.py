@@ -392,6 +392,6 @@ def test_the_stylesheet_is_served(client: TestClient) -> None:
     css = client.get("/static/css/app.css")
 
     assert css.status_code == 200
-    assert ".results" in css.text
-    assert "flex-wrap" in css.text
+    assert ".no-image" in css.text
+    assert "aspect-ratio" in css.text
     assert "/static/css/app.css" in client.get("/search").text

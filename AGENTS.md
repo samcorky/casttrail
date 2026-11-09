@@ -34,6 +34,7 @@ All via `uv run poe <task>`:
 - Providers return data and never touch the database. Core owns persistence, identity, matching and notifications.
 - Imported data is untrusted. A missing listing is never a cancellation. Manual identity decisions are never overwritten by a sync.
 - Every personal query filters by user. Return 404 for missing or not-owned resources.
+- Templates use Bootstrap 5.3 classes (vendored in `web/static`, no CDN). Keep `app.css` small. A table that matters on a phone shows its secondary columns under the first one below `md` (see `events.html`), and a data table sits in `.table-responsive`.
 - Keep it simple. No speculative abstractions, buses or extra layers. Implement only the requested work package chunk.
 - Each schema change is an Alembic migration with a fresh-database and an upgrade test.
 

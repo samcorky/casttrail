@@ -241,7 +241,7 @@ def test_the_event_count_for_a_guest_is_shown(client: TestClient) -> None:
     page = _admin(client).get("/admin/review").text
 
     row = page[page.index("Paul McGann") :]
-    assert "<td>2</td>" in row[: row.index("</tr>")]
+    assert '<td class="text-end">2</td>' in row[: row.index("</tr>")]
 
 
 def test_an_unknown_notice_shows_nothing(client: TestClient) -> None:

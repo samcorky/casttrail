@@ -1,102 +1,120 @@
 {% extends "base.html" %}
 {% block title %}Review guests · CastTrail{% endblock %}
 {% block content %}
-<h1>Review guests</h1>
-{% if notice %}<p role="status"><strong>{{ notice }}</strong></p>{% endif %}
-<p>
+<h1 class="mb-3">Review guests</h1>
+{% if notice %}<div class="alert alert-info" role="status"><strong>{{ notice }}</strong></div>{% endif %}
+<p class="text-body-secondary">
   A guest is only <em>Possible</em> until you confirm them. Confirming applies to
   everyone, and rejecting stops that person being suggested for the guest again.
 </p>
 
-<h2>Waiting to be confirmed</h2>
-{% if suggestions %}
-<form method="post" action="/admin/review/confirm-all">
-  <button type="submit" class="secondary">Confirm all exact-name matches</button>
-</form>
-<table>
-  <thead><tr><th>Guest</th><th>Watched person</th><th>Events</th><th>Actions</th></tr></thead>
-  <tbody>
-    {% for s in suggestions %}
-    <tr>
-      <td>{{ s.guest_name }}</td>
-      <td>{{ s.person_name }}</td>
-      <td>{{ s.events }}</td>
-      <td>
-        <form method="post" action="/admin/review/confirm">
-          <input type="hidden" name="identity_id" value="{{ s.identity_id }}">
-          <input type="hidden" name="person_id" value="{{ s.person_id }}">
-          <button type="submit">Confirm</button>
-        </form>
-        <form method="post" action="/admin/review/reject">
-          <input type="hidden" name="identity_id" value="{{ s.identity_id }}">
-          <input type="hidden" name="person_id" value="{{ s.person_id }}">
-          <button type="submit" class="outline">Reject</button>
-        </form>
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
-<p>"Confirm all" skips a guest with more than one suggestion.</p>
-{% else %}
-<p>Nothing is waiting.</p>
-{% endif %}
-
-<h2>Linked guests</h2>
-{% if linked %}
-<table>
-  <thead><tr><th>Guest</th><th>Linked to</th><th>Actions</th></tr></thead>
-  <tbody>
-    {% for g in linked %}
-    <tr>
-      <td>{{ g.guest_name }}</td>
-      <td>{{ g.person_name }}</td>
-      <td>
-        <form method="post" action="/admin/review/unlink">
-          <input type="hidden" name="identity_id" value="{{ g.identity_id }}">
-          <button type="submit" class="outline">Unlink</button>
-        </form>
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
-{% else %}
-<p>No guests are linked.</p>
-{% endif %}
-
-<h2>Find a guest to link</h2>
-<form method="get" action="/admin/review" role="search">
-  <input type="search" name="q" value="{{ q }}" maxlength="100" placeholder="Part of a name" aria-label="Guest name">
-  <button type="submit">Search</button>
-</form>
-{% if q %}
-  {% if found %}
-  <table>
-    <thead><tr><th>Guest</th><th>Linked to</th><th>Link to</th></tr></thead>
-    <tbody>
-      {% for g in found %}
-      <tr>
-        <td>{{ g.guest_name }}</td>
-        <td>{{ g.person_name or "Nobody" }}</td>
-        <td>
-          <form method="post" action="/admin/review/confirm">
-            <input type="hidden" name="identity_id" value="{{ g.identity_id }}">
-            <input type="hidden" name="q" value="{{ q }}">
-            <select name="person_id" required aria-label="Person">
-              {% for id, name in people %}
-              <option value="{{ id }}"{% if id == g.person_id %} selected{% endif %}>{{ name }}</option>
-              {% endfor %}
-            </select>
-            <button type="submit">Link</button>
-          </form>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+<section class="mb-5">
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+    <h2 class="h4 mb-0">Waiting to be confirmed</h2>
+    {% if suggestions %}
+    <form method="post" action="/admin/review/confirm-all">
+      <button type="submit" class="btn btn-outline-primary btn-sm">Confirm all exact-name matches</button>
+    </form>
+    {% endif %}
+  </div>
+  {% if suggestions %}
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead><tr><th>Guest</th><th>Watched person</th><th class="text-end">Events</th><th>Actions</th></tr></thead>
+      <tbody>
+        {% for s in suggestions %}
+        <tr>
+          <td>{{ s.guest_name }}</td>
+          <td>{{ s.person_name }}</td>
+          <td class="text-end">{{ s.events }}</td>
+          <td>
+            <div class="d-flex flex-wrap gap-1">
+              <form method="post" action="/admin/review/confirm">
+                <input type="hidden" name="identity_id" value="{{ s.identity_id }}">
+                <input type="hidden" name="person_id" value="{{ s.person_id }}">
+                <button type="submit" class="btn btn-primary btn-sm">Confirm</button>
+              </form>
+              <form method="post" action="/admin/review/reject">
+                <input type="hidden" name="identity_id" value="{{ s.identity_id }}">
+                <input type="hidden" name="person_id" value="{{ s.person_id }}">
+                <button type="submit" class="btn btn-outline-secondary btn-sm">Reject</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="text-body-secondary"><small>"Confirm all" skips a guest with more than one suggestion.</small></p>
   {% else %}
-  <p>No guest has that name.</p>
+  <p>Nothing is waiting.</p>
   {% endif %}
-{% endif %}
+</section>
+
+<section class="mb-5">
+  <h2 class="h4">Linked guests</h2>
+  {% if linked %}
+  <div class="table-responsive">
+    <table class="table table-hover align-middle">
+      <thead><tr><th>Guest</th><th>Linked to</th><th>Actions</th></tr></thead>
+      <tbody>
+        {% for g in linked %}
+        <tr>
+          <td>{{ g.guest_name }}</td>
+          <td>{{ g.person_name }}</td>
+          <td>
+            <form method="post" action="/admin/review/unlink">
+              <input type="hidden" name="identity_id" value="{{ g.identity_id }}">
+              <button type="submit" class="btn btn-outline-secondary btn-sm">Unlink</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p>No guests are linked.</p>
+  {% endif %}
+</section>
+
+<section>
+  <h2 class="h4">Find a guest to link</h2>
+  <form method="get" action="/admin/review" role="search" class="input-group mb-3" style="max-width: 32rem">
+    <input class="form-control" type="search" name="q" value="{{ q }}" maxlength="100" placeholder="Part of a name" aria-label="Guest name">
+    <button type="submit" class="btn btn-primary">Search</button>
+  </form>
+  {% if q %}
+    {% if found %}
+    <div class="table-responsive">
+      <table class="table align-middle">
+        <thead><tr><th>Guest</th><th>Linked to</th><th>Link to</th></tr></thead>
+        <tbody>
+          {% for g in found %}
+          <tr>
+            <td>{{ g.guest_name }}</td>
+            <td>{{ g.person_name or "Nobody" }}</td>
+            <td>
+              <form method="post" action="/admin/review/confirm" class="input-group input-group-sm">
+                <input type="hidden" name="identity_id" value="{{ g.identity_id }}">
+                <input type="hidden" name="q" value="{{ q }}">
+                <select class="form-select" name="person_id" required aria-label="Person">
+                  {% for id, name in people %}
+                  <option value="{{ id }}"{% if id == g.person_id %} selected{% endif %}>{{ name }}</option>
+                  {% endfor %}
+                </select>
+                <button type="submit" class="btn btn-primary">Link</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p>No guest has that name.</p>
+    {% endif %}
+  {% endif %}
+</section>
 {% endblock %}
