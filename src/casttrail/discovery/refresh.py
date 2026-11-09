@@ -175,6 +175,9 @@ class RosterconRefresh:
                 .order_by(Person.name, Person.id)
             )
         )
+        # Reading began a transaction, and with it SQLite's one write lock. Release it:
+        # what follows is minutes of fetching, and must not hold the lock while it does.
+        await self._session.commit()
         report.people_watched = len(people)
         if not people:
             return
