@@ -1,12 +1,15 @@
 /* CastTrail's own styles, on top of Bootstrap. Keep this small: use Bootstrap's classes. */
 
-/* A poster or photo: always 2:3, whether or not there is a picture. */
+/* A poster or photo: always 2:3, whether or not there is a picture. Its top corners
+   follow the card's own, so the picture is rounded with the card and not square inside it. */
 .card > img,
 .card > .no-image {
   width: 100%;
   aspect-ratio: 2 / 3;
   object-fit: cover;
   background: var(--bs-secondary-bg);
+  border-top-left-radius: var(--bs-card-inner-border-radius);
+  border-top-right-radius: var(--bs-card-inner-border-radius);
 }
 
 .card > .no-image {
