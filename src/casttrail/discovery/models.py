@@ -170,3 +170,31 @@ class JobRun(Base):
     finished_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
     # What the run did, as JSON of counts. Never holds credentials or page text.
     summary: Mapped[str | None] = mapped_column(String(2000))
+
+
+class ConventionMerge(Base):
+    """A pair of conventions that might be the same event, and what was decided.
+
+    The pair is stored once, with the smaller id first. A ``suggested`` pair waits for
+    a person; ``rejected`` pairs are never suggested again; ``merged`` records that the
+    two were joined.
+    """
+
+    __tablename__ = "convention_merges"
+    __table_args__ = (
+        UniqueConstraint("first_id", "second_id"),
+        CheckConstraint("first_id <> second_id", name="distinct_pair"),
+        CheckConstraint("status IN ('suggested', 'rejected', 'merged')", name="status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    first_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("conventions.id", ondelete="CASCADE")
+    )
+    second_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("conventions.id", ondelete="CASCADE"), index=True
+    )
+    status: Mapped[str] = mapped_column(String(9), default="suggested")
+    reason: Mapped[str] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utc_now)
+    decided_at: Mapped[datetime | None] = mapped_column(UtcDateTime)

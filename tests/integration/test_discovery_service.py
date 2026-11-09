@@ -10,12 +10,14 @@ from casttrail.discovery.models import (
     Appearance,
     AppearanceSource,
     Convention,
+    ConventionMerge,
     ConventionSource,
     SourceObservation,
 )
 from casttrail.discovery.service import DiscoveryService, content_hash
 from casttrail.identity.models import ExternalIdentity
 from casttrail.providers.base import ConventionInfo, GuestObservation, ListingResult
+from casttrail.providers.comiconomicon import parse_event_page as parse_comicon_event
 from casttrail.providers.rostercon import parse_event_page
 
 if TYPE_CHECKING:
@@ -484,7 +486,13 @@ async def test_the_same_key_from_two_providers_is_two_separate_conventions(
     service: DiscoveryService, db_session: AsyncSession
 ) -> None:
     await service.ingest("rostercon", _convention(source_key="1"), _listing("g"))
-    await service.ingest("comiconomicon", _convention(source_key="1"), _listing("g"))
+    other = _convention(
+        source_key="1",
+        name="A Different Event",
+        start_date=date(2027, 9, 1),
+        end_date=date(2027, 9, 2),
+    )
+    await service.ingest("comiconomicon", other, _listing("g"))
 
     assert await _count(db_session, Convention) == 2
     assert await _count(db_session, ConventionSource) == 2
@@ -711,3 +719,311 @@ async def test_a_new_event_for_a_guest_linked_by_hand_inherits_the_link(
     )
     assert rows["Two"] == person.id
     assert rows["One"] is None
+
+
+# --- the same event from two sources ---------------------------------------------
+
+
+async def _merges(session: AsyncSession) -> list[ConventionMerge]:
+    return list(await session.scalars(select(ConventionMerge)))
+
+
+async def test_the_same_event_from_a_second_source_is_one_convention(
+    service: DiscoveryService, db_session: AsyncSession
+) -> None:
+    first = await service.ingest("rostercon", _convention(), _listing("g"))
+
+    second = await service.ingest(
+        "comiconomicon",
+        _convention(
+            source_key="42676", source_url="https://comiconomicon.com/event/42676/x"
+        ),
+        _listing("g"),
+    )
+
+    assert second.convention_id == first.convention_id
+    assert (second.convention_created, second.merge_suggestions) == (False, 0)
+    assert await _count(db_session, Convention) == 1
+    sources = list(await db_session.scalars(select(ConventionSource.provider)))
+    assert sorted(sources) == ["comiconomicon", "rostercon"]
+    assert await _merges(db_session) == []
+
+
+async def test_it_does_not_matter_which_source_arrives_first(
+    service: DiscoveryService, db_session: AsyncSession
+) -> None:
+    first = await service.ingest(
+        "comiconomicon", _convention(source_key="42676"), _listing("g")
+    )
+
+    second = await service.ingest("rostercon", _convention(), _listing("g"))
+
+    assert second.convention_id == first.convention_id
+    assert await _count(db_session, Convention) == 1
+
+
+async def test_a_second_ingest_of_either_page_keeps_it_merged(
+    service: DiscoveryService, db_session: AsyncSession
+) -> None:
+    await service.ingest("rostercon", _convention(), _listing("g"))
+    other = _convention(source_key="42676")
+    await service.ingest("comiconomicon", other, _listing("g"))
+
+    for _ in range(2):
+        await service.ingest("rostercon", _convention(), _listing("g"))
+        again = await service.ingest("comiconomicon", other, _listing("g"))
+
+    assert again.convention_created is False
+    assert await _count(db_session, Convention) == 1
+    assert await _count(db_session, ConventionSource) == 2
+
+
+async def test_the_lead_source_decides_details_and_the_other_only_fills_gaps(
+    service: DiscoveryService, db_session: AsyncSession
+) -> None:
+    await service.ingest(
+        "rostercon",
+        _convention(venue="Real Venue", city=None, organizer=None, region=None),
+        _listing("g"),
+    )
+    follower = _convention(
+        source_key="42676",
+        name="SOME CON!",
+        venue="Free text line Lincoln United Kingdom",
+        city="Elsewhere",
+        organizer="Their Organiser",
+        region="Scotland",
+    )
+
+    await service.ingest("comiconomicon", follower, _listing("g"))
+
+    con = await db_session.scalar(select(Convention))
+    assert con is not None
+    assert con.name == "Some Con"
+    assert con.venue == "Real Venue"
+    assert (con.city, con.organizer, con.region) == (
+        "Elsewhere",
+        "Their Organiser",
+        "Scotland",
+    )
+
+
+async def test_a_later_visit_by_the_follower_does_not_overwrite_the_lead(
+    service: DiscoveryService, db_session: AsyncSession
+) -> None:
+    await service.ingest("rostercon", _convention(venue="Real Venue"), _listing("g"))
+    follower = _convention(source_key="42676", venue="Other Text")
+    for _ in range(2):
+        await service.ingest("comiconomicon", follower, _listing("g"))
+
+    con = await db_session.scalar(select(Convention))
+    assert con is not None
+    assert con.venue == "Real Venue"
+
+
+async def test_a_lead_source_arriving_later_takes_over_the_details(
+    service: DiscoveryService, db_session: AsyncSession
+) -> None:
+    await service.ingest(
+        "comiconomicon",
+        _convention(source_key="42676", venue="Free text", name="Some Con!"),
+        _listing("g"),
+    )
+
+    await service.ingest("rostercon", _convention(venue="Real Venue"), _listing("g"))
+
+    con = await db_session.scalar(select(Convention))
+    assert con is not None
+    assert (con.name, con.venue) == ("Some Con", "Real Venue")
+
+
+async def test_the_same_name_on_different_days_stays_two_events(
+    service: DiscoveryService, db_session: AsyncSession
+) -> None:
+    await service.ingest("rostercon", _convention(), _listing("g"))
+
+    result = await service.ingest(
+        "comiconomicon",
+        _convention(
+            source_key="9", start_date=date(2028, 4, 15), end_date=date(2028, 4, 16)
+        ),
+        _listing("g"),
+    )
+
+    assert result.convention_created is True
+    assert await _count(db_session, Convention) == 2
+    assert await _merges(db_session) == []
+
+
+async def test_a_provider_never_merges_two_of_its_own_events(
+    service: DiscoveryService, db_session: AsyncSession
+) -> None:
+    await service.ingest("rostercon", _convention(), _listing("g"))
+
+    result = await service.ingest(
+        "rostercon", _convention(source_key="other-key"), _listing("g")
+    )
+
+    assert result.convention_created is True
+    assert await _count(db_session, Convention) == 2
+    assert await _merges(db_session) == []
+
+
+async def test_a_near_match_is_kept_apart_and_suggested_once(
+    service: DiscoveryService, db_session: AsyncSession
+) -> None:
+    first = await service.ingest("rostercon", _convention(), _listing("g"))
+    near = _convention(source_key="42676", name="Some Con Lincoln")
+
+    second = await service.ingest("comiconomicon", near, _listing("g"))
+    await service.ingest("comiconomicon", near, _listing("g"))
+
+    assert second.convention_created is True
+    assert second.convention_id != first.convention_id
+    assert second.merge_suggestions == 1
+    (merge,) = await _merges(db_session)
+    assert {merge.first_id, merge.second_id} == {
+        first.convention_id,
+        second.convention_id,
+    }
+    assert str(merge.first_id) < str(merge.second_id)
+    assert (merge.status, merge.reason) == (
+        "suggested",
+        "Alike names on overlapping days.",
+    )
+
+
+async def test_same_name_with_a_different_end_day_is_suggested_with_that_reason(
+    service: DiscoveryService, db_session: AsyncSession
+) -> None:
+    await service.ingest("rostercon", _convention(), _listing("g"))
+
+    await service.ingest(
+        "comiconomicon",
+        _convention(source_key="1", end_date=date(2027, 4, 20)),
+        _listing("g"),
+    )
+
+    (merge,) = await _merges(db_session)
+    assert merge.reason == "Same name, but the days do not match exactly."
+
+
+async def test_two_exact_matches_are_not_guessed_between(
+    service: DiscoveryService, db_session: AsyncSession
+) -> None:
+    await service.ingest("rostercon", _convention(source_key="a"), _listing("g"))
+    await service.ingest("rostercon", _convention(source_key="b"), _listing("g"))
+
+    result = await service.ingest(
+        "comiconomicon", _convention(source_key="1"), _listing("g")
+    )
+
+    assert result.convention_created is True
+    assert result.merge_suggestions == 2
+    assert await _count(db_session, Convention) == 3
+    assert {m.reason for m in await _merges(db_session)} == {
+        "Several listings share this name and day."
+    }
+
+
+async def test_a_rejected_pair_is_never_suggested_again(
+    service: DiscoveryService, db_session: AsyncSession
+) -> None:
+    await service.ingest("rostercon", _convention(), _listing("g"))
+    near = _convention(source_key="42676", name="Some Con Lincoln")
+    await service.ingest("comiconomicon", near, _listing("g"))
+    merge = (await _merges(db_session))[0]
+    merge_id = merge.id
+    merge.status = "rejected"
+    await db_session.commit()
+
+    await service.ingest("comiconomicon", near, _listing("g"))
+    await service.ingest("rostercon", _convention(), _listing("g"))
+
+    stored = await _merges(db_session)
+    assert [(m.id, m.status) for m in stored] == [(merge_id, "rejected")]
+
+
+async def test_an_unknown_date_and_the_same_name_is_suggested_not_merged(
+    service: DiscoveryService, db_session: AsyncSession
+) -> None:
+    await service.ingest("rostercon", _convention(), _listing("g"))
+
+    result = await service.ingest(
+        "comiconomicon",
+        _convention(source_key="1", start_date=None, end_date=None),
+        _listing("g"),
+    )
+
+    assert result.convention_created is True
+    assert result.merge_suggestions == 1
+
+
+async def test_a_page_with_no_dates_and_an_unrelated_name_suggests_nothing(
+    service: DiscoveryService, db_session: AsyncSession
+) -> None:
+    await service.ingest("rostercon", _convention(), _listing("g"))
+
+    result = await service.ingest(
+        "comiconomicon",
+        _convention(source_key="1", name="Other Show", start_date=None, end_date=None),
+        _listing("g"),
+    )
+
+    assert (result.convention_created, result.merge_suggestions) == (True, 0)
+
+
+async def test_both_fixtures_for_one_event_give_one_convention(
+    service: DiscoveryService, db_session: AsyncSession
+) -> None:
+    fixtures = Path(__file__).parents[1] / "fixtures"
+    roster_html = (
+        fixtures / "rostercon" / "event_follow-the-yellow-gate-road-take-4.html"
+    ).read_text(encoding="utf-8")
+    comicon_html = (
+        fixtures / "comiconomicon" / "event_42676_follow_the_yellow_gate_road.html"
+    ).read_text(encoding="utf-8")
+    roster = parse_event_page(roster_html)
+    comicon = parse_comicon_event(comicon_html)
+    assert roster.convention is not None
+    assert comicon.convention is not None
+
+    first = await service.ingest("rostercon", roster.convention, roster.guests)
+    second = await service.ingest("comiconomicon", comicon.convention, comicon.guests)
+
+    assert second.convention_id == first.convention_id
+    assert await _count(db_session, Convention) == 1
+    assert await _merges(db_session) == []
+    providers = sorted(await db_session.scalars(select(ConventionSource.provider)))
+    assert providers == ["comiconomicon", "rostercon"]
+
+
+async def test_noting_a_pair_twice_in_either_order_keeps_one_row(
+    service: DiscoveryService, db_session: AsyncSession
+) -> None:
+    one = (
+        await service.ingest("rostercon", _convention(), _listing("g"))
+    ).convention_id
+    two = (
+        await service.ingest(
+            "comiconomicon",
+            _convention(source_key="1", name="Other Show"),
+            _listing("g"),
+        )
+    ).convention_id
+    first = await db_session.get(Convention, one)
+    second = await db_session.get(Convention, two)
+    assert first is not None
+    assert second is not None
+    now = datetime(2026, 11, 9, tzinfo=UTC)
+
+    added = [
+        await service._suggest(first, second, "r", now),
+        await service._suggest(second, first, "r", now),
+        await service._suggest(first, second, "r", now),
+    ]
+    await db_session.commit()
+
+    assert added == [1, 0, 0]
+    (merge,) = await _merges(db_session)
+    assert (merge.first_id, merge.second_id) == tuple(sorted((one, two), key=str))
