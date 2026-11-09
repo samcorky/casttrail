@@ -184,6 +184,21 @@ def test_a_failed_backup_leaves_no_file_that_looks_like_one(tmp_path: Path) -> N
     assert list((tmp_path / "b").iterdir()) == []
 
 
+def test_a_cleanup_failure_does_not_hide_why_the_backup_failed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    junk = tmp_path / "junk.db"
+    junk.write_bytes(b"not a database at all, just bytes" * 10)
+
+    def cannot_delete(self: Path, missing_ok: bool = False) -> None:
+        raise OSError("read-only")
+
+    monkeypatch.setattr(Path, "unlink", cannot_delete)
+
+    with pytest.raises(sqlite3.Error):
+        backup(junk, tmp_path / "b", "daily", now=NOW)
+
+
 # --- listing and pruning ----------------------------------------------------------
 
 
@@ -266,3 +281,22 @@ def test_a_manual_copy_counts_towards_not_being_due(tmp_path: Path) -> None:
     _touch(folder, NOW - timedelta(hours=1), "manual")
 
     assert backup_is_due(folder, now=NOW) is False
+
+
+def test_the_migrations_folder_defaults_to_the_one_beside_the_source() -> None:
+    assert maintenance.MIGRATIONS_DIR.name == "migrations"
+    assert (maintenance.MIGRATIONS_DIR / "env.py").is_file()
+
+
+def test_an_installed_copy_can_say_where_its_migrations_are(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import importlib
+
+    monkeypatch.setenv("CASTTRAIL_MIGRATIONS_DIR", str(tmp_path))
+    try:
+        reloaded = importlib.reload(maintenance)
+        assert tmp_path == reloaded.MIGRATIONS_DIR
+    finally:
+        monkeypatch.delenv("CASTTRAIL_MIGRATIONS_DIR")
+        importlib.reload(maintenance)

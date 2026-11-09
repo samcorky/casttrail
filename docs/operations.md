@@ -1,6 +1,43 @@
 # Running CastTrail
 
-## Start it
+## Run it in Docker (the way it is meant to be run)
+
+```
+docker compose up -d --build
+```
+
+- **Settings:** the same `.env` file is passed into the container. The database path and
+  backup folder are set for you (`/data` and `/backups` inside the container).
+- **Data:** the database lives in the named volume `casttrail-data`. It is not a bind mount
+  because SQLite's write-ahead log is unreliable on one from a Windows or macOS host.
+- **Backups:** written to `./backups` beside `compose.yaml`, a plain folder you can copy or
+  sync elsewhere.
+- **Port:** published on `127.0.0.1:8002` only. Put Tailscale in front of it:
+  `tailscale serve --bg --https=443 http://127.0.0.1:8002`.
+- **Restarts itself:** `restart: unless-stopped` brings it back after a crash or reboot
+  (Docker must be set to start with Windows). The container is marked unhealthy, with the
+  reason in `docker logs casttrail`, if the app is degraded.
+- **Time:** `TZ` (default `Europe/London`) is the clock for the daily backup and refresh.
+- **Hardened:** read-only root, non-root user, no capabilities, 512 MB memory limit, logs
+  rotated at 10 MB x 3.
+- **Update:** `git pull`, then `docker compose up -d --build`. The database is backed up and
+  updated on start.
+- **Logs:** `docker logs -f casttrail`.
+
+### Moving an existing database into Docker
+
+With the app stopped (so the file is not in use):
+
+```
+docker compose up --no-start
+docker run --rm -v casttrail_casttrail-data:/data -v "%cd%/data":/from alpine   sh -c "cp /from/casttrail.db /data/ && chown 1000:1000 /data/casttrail.db"
+docker compose up -d
+```
+
+The volume name is `<folder>_casttrail-data`. Keep the old `data/` folder until you have
+checked the new copy.
+
+## Start it without Docker
 
 ```
 uv run poe serve

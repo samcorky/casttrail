@@ -298,3 +298,17 @@ Requested by the project owner: start-up should update the database by itself, n
 - **Tests:** the suite never reads a developer's `.env`, and builds its settings with backups off unless a test is about them.
 - **Also:** `uv run poe serve` now runs with `--no-http1-keep-alive`, the fix for the idle form resets seen over Tailscale.
 - **Not done:** restoring from the admin page (restore is a documented manual step, since replacing the live database from inside the running app is risky); copying backups off the machine (do that by hand for now).
+
+## Docker (2026-11-09)
+
+The app is meant to run in Docker. Files: `Dockerfile`, `compose.yaml`, `.dockerignore`, `scripts/healthcheck.py`; how to run, update, move an existing database in and restore is in `docs/operations.md`.
+
+- **Follows Menagerist's pattern** (the owner's other project): multi-stage build with pinned base digests, uv-managed Python, a distroless non-root runtime, read-only root, all capabilities dropped, `no-new-privileges`, a 512 MB memory limit, log rotation, `restart: unless-stopped`. No Postgres or Node, so it is one container.
+- **One worker, one container:** the app keeps its timers and Rostercon request spacing in memory, so more than one copy would send more requests than intended.
+- **Data:** the database lives in a *named volume*, not a bind mount, because SQLite's write-ahead log is not reliable on a bind mount from a Windows or macOS host. Backups go to a plain `./backups` folder so they are easy to see, copy and sync.
+- **Port:** published only on `127.0.0.1:8002`, which is where `tailscale serve` already points, so Tailscale and HTTPS carry over unchanged.
+- **Settings:** the same `.env` is passed in by compose (never baked into the image: it is in `.dockerignore`). The image sets the database path, backup folder and migrations folder.
+- **Migrations folder is configurable** (`CASTTRAIL_MIGRATIONS_DIR`): the code used to find `migrations/` beside the source tree, which does not hold for an installed package. The image copies it to `/app/migrations`.
+- **Healthcheck** answers healthy only on a 200 from `/health`, so a degraded app (see startup notes above) shows as unhealthy with the reason in `docker logs`.
+- **Tested for real, not just built:** a throwaway container with a fresh volume migrated itself, bootstrapped the admin from settings, served the login, dashboard and events pages, wrote a startup backup into the mounted folder, kept its data across a restart and reported healthy. With no backups folder mounted it still served pages (the backup became a warning), which exposed that a failed cleanup could hide the real error; fixed.
+- **Not done:** building and publishing the image in CI; a poe shortcut; restoring from the admin page.

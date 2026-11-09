@@ -1,0 +1,43 @@
+services:
+  casttrail:
+    build:
+      context: .
+      args:
+        VERSION: ${CASTTRAIL_VERSION:-0.0.0}
+    image: ${CASTTRAIL_IMAGE:-casttrail:local}
+    container_name: casttrail
+    restart: unless-stopped
+    mem_limit: 512m
+    # Behind `tailscale serve`, this is the address it proxies to.
+    ports:
+      - "127.0.0.1:8002:8000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Daily timers and backup hours use this clock.
+      TZ: ${TZ:-Europe/London}
+    volumes:
+      # The database lives in a named volume: SQLite's write-ahead log is not reliable
+      # on a bind mount from a Windows or macOS host.
+      - casttrail-data:/data
+      # Backups go to a plain folder you can see, copy and sync.
+      - ./backups:/backups
+    read_only: true
+    user: "1000:1000"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:mode=1700,size=64M,noexec,nosuid,nodev,uid=1000,gid=1000
+    stop_grace_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  casttrail-data:
+    driver: local
