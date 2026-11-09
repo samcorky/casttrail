@@ -68,6 +68,33 @@ help = "Install the project and dev tools"
 cmd = "granian --interface asgi --factory --no-http1-keep-alive --host 127.0.0.1 --port 8000 --workers 1 casttrail.main:create_app"
 help = "Run the app on http://127.0.0.1:8000"
 
+# The image has no git history, so the version is worked out here and passed in.
+[tool.poe.tasks._docker-version]
+cmd = "uv run --locked --only-group release calver-scm --format plain version"
+
+[tool.poe.tasks.docker-build]
+cmd = "docker compose build"
+uses = { CASTTRAIL_VERSION = "_docker-version" }
+help = "Build the Docker image, with the version worked out from git"
+
+[tool.poe.tasks.docker-up]
+cmd = "docker compose up -d --wait"
+deps = ["docker-build"]
+help = "Build the image and (re)start the container, waiting until it is healthy"
+
+[tool.poe.tasks.docker-down]
+cmd = "docker compose down"
+help = "Stop and remove the container (the data volume and backups are kept)"
+
+[tool.poe.tasks.docker-logs]
+cmd = "docker compose logs -f --tail 100"
+help = "Follow the container's log (Ctrl+C to stop)"
+ignore_fail = true
+
+[tool.poe.tasks.docker-config]
+cmd = "docker compose config"
+help = "Print the Docker Compose config as it will run"
+
 [tool.poe.tasks.migrate]
 cmd = "alembic upgrade head"
 help = "Apply database migrations"

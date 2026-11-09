@@ -4,7 +4,9 @@ Everything here works on the SQLite file directly, with the standard library, so
 can run before the application's own engine exists and in a worker thread.
 """
 
+import contextlib
 import logging
+import os
 import re
 import sqlite3
 from contextlib import closing
@@ -19,7 +21,12 @@ from sqlalchemy.engine import make_url
 
 logger = logging.getLogger(__name__)
 
-MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "migrations"
+# Beside the source tree when run from a checkout; an installed copy (the Docker image)
+# says where its copy is.
+MIGRATIONS_DIR = Path(
+    os.environ.get("CASTTRAIL_MIGRATIONS_DIR")
+    or Path(__file__).resolve().parents[2] / "migrations"
+)
 BACKUP_SUFFIX = ".db"
 _NAME = re.compile(r"casttrail-(\d{8})-(\d{6})-([a-z-]+)\.db")
 # Reasons a backup was taken. Only ``daily`` copies are pruned by age.
@@ -154,7 +161,9 @@ def backup(
             src.backup(dst)
         partial.replace(target)
     finally:
-        partial.unlink(missing_ok=True)
+        # Best effort: a failure here must not hide why the backup itself failed.
+        with contextlib.suppress(OSError):
+            partial.unlink(missing_ok=True)
     return target
 
 

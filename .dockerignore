@@ -1,0 +1,32 @@
+# Python
+__pycache__
+*.py[cod]
+*.pyo
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov
+
+# Environments and secrets: settings reach the container through compose, not the image
+.venv
+venv
+.env
+.env.*
+!.env.example
+
+# Local data and backups never go into an image
+data
+backups
+
+# Git and editors
+.git
+.vscode
+.idea
+.remember
+.superpowers
+.claude
+
+# Not needed to run
+tests
+docs
