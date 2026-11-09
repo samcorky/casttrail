@@ -26,4 +26,4 @@ def database_url(tmp_path: Path) -> str:
 @pytest.fixture
 def settings(database_url: str) -> Settings:
     """Settings that never touch the real ``data/`` directory."""
-    return Settings(database_url=database_url)
+    return Settings(database_url=database_url, backups_enabled=False)

@@ -32,6 +32,19 @@ class Settings(BaseSettings):
     refresh_enabled: bool = False
     refresh_hour: int = Field(default=4, ge=0, le=23)
 
+    # Bring the database up to date when the app starts. A copy is taken first if
+    # anything is waiting to be applied.
+    auto_migrate: bool = True
+
+    # Copies of the database: one before a migration, one at the chosen hour each day,
+    # and one at startup if the newest is more than a day old. Kept in ``backup_dir``
+    # (a ``backups`` folder beside the database when empty); only the newest
+    # ``backup_keep`` daily copies are kept.
+    backups_enabled: bool = True
+    backup_dir: str | None = None
+    backup_keep: int = Field(default=14, ge=1, le=365)
+    backup_hour: int = Field(default=3, ge=0, le=23)
+
     session_ttl_hours: int = 24 * 30
     cookie_name: str = "casttrail-session"
     device_cookie_name: str = "casttrail-device"

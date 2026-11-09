@@ -52,9 +52,17 @@ def test_status_page_renders_status_and_version(client: TestClient) -> None:
 
 
 def test_status_page_says_when_the_database_is_not_migrated(
-    client: TestClient,
+    settings: Settings,
 ) -> None:
-    assert "not migrated" in client.get("/status").text
+    off = settings.model_copy(update={"auto_migrate": False})
+
+    with TestClient(create_app(off)) as unmigrated:
+        assert "not migrated" in unmigrated.get("/status").text
+
+
+def test_a_fresh_database_is_migrated_on_start(client: TestClient) -> None:
+    assert "not migrated" not in client.get("/status").text
+    assert client.get("/health").json() == {"status": "ok"}
 
 
 def test_static_assets_are_served_locally(client: TestClient) -> None:
