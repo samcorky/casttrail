@@ -238,7 +238,7 @@ Revisit these only after WP-8, each as its own slice.
   - [x] 3.4b Polite fetch client: spacing, backoff on 429 and 503, cached sitemap 🧪
   - [x] 3.4c `job_runs`, non-overlapping lock, and the refresh for watched people 🗄️ 🧪
   - [x] 3.4d Scheduler (daily) and an admin-only manual refresh
-- [ ] 3.5 UK events and guests pages, unknowns shown as unknown 👁️ DEMO
+- [x] 3.5 UK events and guests pages, unknowns shown as unknown 👁️ DEMO
 - [ ] 3.6 Source health page; a parse failure keeps old data 🧪
 - [ ] ⛔ GATE: double refresh gives no duplicates
 

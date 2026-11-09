@@ -39,6 +39,7 @@
           <li><a href="/admin/refresh"{% if path.startswith("/admin/refresh") %} aria-current="page"{% endif %}>Refresh</a></li>
           {% endif %}
           <li><a href="/watchlist"{% if path == "/watchlist" %} aria-current="page"{% endif %}>Watchlist</a></li>
+          <li><a href="/events"{% if path.startswith("/events") %} aria-current="page"{% endif %}>Events</a></li>
           <li><a href="/search"{% if path == "/search" %} aria-current="page"{% endif %}>Search</a></li>
           <li><a href="/account/password"{% if path == "/account/password" %} aria-current="page"{% endif %}>Password</a></li>
           <li><a href="/status"{% if path == "/status" %} aria-current="page"{% endif %}>Status</a></li>

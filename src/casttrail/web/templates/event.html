@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% from "_event_bits.html" import dates, place, status %}
+{% block title %}{{ detail.convention.name }} · CastTrail{% endblock %}
+{% block content %}
+{% set c = detail.convention %}
+<p><a href="/events">&larr; Events</a></p>
+<h1>{{ c.name }}</h1>
+<dl>
+  <dt>When</dt><dd>{{ dates(c) }}</dd>
+  <dt>Where</dt><dd>{{ place(c) }}{% if c.region %} ({{ c.region }}){% endif %}</dd>
+  <dt>Status</dt><dd>{{ status(c.status) }}</dd>
+  <dt>Organiser</dt><dd>{{ c.organizer or "Unknown" }}</dd>
+  {% if detail.source_urls %}
+  <dt>Source</dt>
+  <dd>{% for url in detail.source_urls %}<a href="{{ url }}" rel="noreferrer">{{ url }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</dd>
+  {% endif %}
+</dl>
+<h2>Guests</h2>
+{% if detail.guests %}
+<table>
+  <thead><tr><th>Name</th><th>Status</th></tr></thead>
+  <tbody>
+    {% for g in detail.guests %}
+    <tr>
+      <td><a href="{{ g.source_url }}" rel="noreferrer">{{ g.name }}</a></td>
+      <td>
+        {% if g.status == "cancelled" %}<strong>Cancelled</strong>
+        {% elif not g.listed %}No longer listed
+        {% elif g.status == "postponed" %}Postponed
+        {% elif g.status == "scheduled" %}Confirmed
+        {% else %}Listed{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<p>"No longer listed" only means the source stopped listing the guest. It is not a cancellation.</p>
+{% else %}
+<p>No guests are known for this event.</p>
+{% endif %}
+{% endblock %}

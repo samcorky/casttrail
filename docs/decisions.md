@@ -200,3 +200,11 @@ Found while putting a real instance on Tailscale. Both matter again for WP-8.
 - **Shutdown:** the timer is stopped, a running refresh is cancelled, and the Rostercon HTTP client is closed. A cancelled run leaves a `running` row that the next run replaces after 2 hours (the stale rule from 3.4c).
 - **Wiring:** `create_app(refresher=...)` takes a stand-in for tests; otherwise one `RefreshJob` is built with a single fetcher and people index kept for the life of the app, so Rostercon spacing and the cached index carry across runs. Creating the client makes no network request.
 - **Not done:** no per-user view of the data yet (3.5), and the table shows only counts, not which people were unmatched (3.6 and WP-4).
+
+## WP-3.5: events and guests pages (2026-11-08)
+
+- **Pages:** `/events` lists conventions that have not finished (a 2-day grace for ones still running), soonest first, 50 a page. `/events/<id>` shows one convention and its guests. Both need a sign-in; an unknown id is a 404. The data is shared by everyone, so there is no per-user filtering (nothing here is personal).
+- **UK by default:** the list shows conventions Rostercon places in the United Kingdom, with a link to show all. A convention with no known country appears only under "all", so a missing country is never assumed to be the UK.
+- **Unknowns are shown as unknown:** a missing date, place, status or organiser says "unknown" instead of being left blank or guessed. Events with no date come last, never hidden.
+- **Guests:** shown by the source's name with a link to its page. "Confirmed" means the source stated scheduled, "Cancelled" and "Postponed" are only what the source stated, "Listed" means listed with no status, and "No longer listed" (listed first, then these last) is explicitly not a cancellation, with a note on the page. Guests are not yet linked to your watched people; that is WP-4.
+- **Not done:** no filter by date or watched person, and no highlighting of watched people until WP-4 links them.

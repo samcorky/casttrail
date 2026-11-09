@@ -1,0 +1,19 @@
+{% macro dates(c) -%}
+{%- if c.start_date and c.end_date and c.end_date != c.start_date -%}
+{{ c.start_date.strftime("%d %b %Y") }} to {{ c.end_date.strftime("%d %b %Y") }}
+{%- elif c.start_date -%}
+{{ c.start_date.strftime("%d %b %Y") }}
+{%- else -%}
+Date unknown
+{%- endif -%}
+{%- endmacro %}
+{% macro place(c) -%}
+{%- set parts = [c.venue, c.city] | select | list -%}
+{%- if parts -%}{{ parts | join(", ") }}{%- else -%}Place unknown{%- endif -%}
+{%- endmacro %}
+{% macro status(s) -%}
+{%- if s == "cancelled" -%}<strong>Cancelled</strong>
+{%- elif s == "postponed" -%}<strong>Postponed</strong>
+{%- elif s == "scheduled" -%}Scheduled
+{%- else -%}Status unknown{%- endif -%}
+{%- endmacro %}

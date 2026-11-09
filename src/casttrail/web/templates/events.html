@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% from "_event_bits.html" import dates, place, status %}
+{% block title %}Events · CastTrail{% endblock %}
+{% block content %}
+{% set scope = "" if uk_only else "scope=all&" %}
+<h1>{{ "UK events" if uk_only else "All events" }}</h1>
+<p>
+  These are the conventions found for the people being watched. Nothing here is
+  guessed: a missing date, place or status is shown as unknown.
+  {% if uk_only %}
+  <a href="/events?scope=all">Show all countries</a>
+  {% else %}
+  <a href="/events">Show UK only</a>
+  {% endif %}
+</p>
+{% if rows %}
+<table>
+  <thead>
+    <tr><th>Event</th><th>When</th><th>Where</th><th>Status</th><th>Guests</th></tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      <td><a href="/events/{{ row.convention.id }}">{{ row.convention.name }}</a></td>
+      <td>{{ dates(row.convention) }}</td>
+      <td>{{ place(row.convention) }}</td>
+      <td>{{ status(row.convention.status) }}</td>
+      <td>{{ row.guests }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<p>
+  {% if page > 1 %}<a href="/events?{{ scope }}page={{ page - 1 }}">Earlier</a>{% endif %}
+  {% if more %}<a href="/events?{{ scope }}page={{ page + 1 }}">Later</a>{% endif %}
+</p>
+{% else %}
+<p>No events found yet.
+  {% if user.is_admin %}An administrator can run a <a href="/admin/refresh">refresh</a>.{% endif %}
+</p>
+{% endif %}
+{% endblock %}
