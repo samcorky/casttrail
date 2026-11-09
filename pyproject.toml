@@ -30,6 +30,7 @@ dev = [
     "mypy>=1.18",
     "poethepoet>=0.37",
     "prek>=0.2",
+    "pillow>=11.0",
     "pytest>=8.4",
     "pytest-alembic>=0.13.2",
     "pytest-asyncio>=1.2",
@@ -94,6 +95,10 @@ ignore_fail = true
 [tool.poe.tasks.docker-config]
 cmd = "docker compose config"
 help = "Print the Docker Compose config as it will run"
+
+[tool.poe.tasks.generate-icons]
+cmd = "python scripts/generate_icons.py"
+help = "Render the app icons from logo.svg (run when the logo changes)"
 
 [tool.poe.tasks.migrate]
 cmd = "alembic upgrade head"
