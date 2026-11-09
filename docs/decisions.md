@@ -148,3 +148,14 @@ Found while putting a real instance on Tailscale. Both matter again for WP-8.
 - **Sign-in over plain HTTP failed from one device.** A plain-text POST arrived but a form with a password field was reset before reaching the server. The cause was on that device or its network, not in the app. HTTPS fixed it.
 - **Granian closes idle HTTP/1 connections after about 30 seconds** and the longest header-read timeout it allows is 60 s. A browser that reuses the connection for a form POST after that gets `ERR_CONNECTION_RESET`, and the POST cannot be retried. Running Granian with `--no-http1-keep-alive` avoids it. `uv run poe serve` does not set that flag yet.
 - **Tailscale HTTPS recipe:** enable HTTPS certificates in the Tailscale admin console, run the app on a loopback port with `CASTTRAIL_COOKIE_SECURE=always`, then `tailscale serve --bg --https=443 http://127.0.0.1:<port>`. This is tailnet-only, not public. The app then sees every request as coming from 127.0.0.1, so the per-address sign-in limit is shared by everyone, which is the trusted-proxy caveat already noted for WP-8.
+
+## WP-3.3: discovery service (2026-11-08)
+
+`DiscoveryService.ingest(provider, convention, listing)` records one parsed page. It is all or nothing: one commit, and a rollback on any failure. Migration 0008 adds `external_identities.display_name`, because an unmatched guest otherwise had no name to show on the 3.5 pages.
+
+- **Idempotent.** Ingesting the same page twice creates nothing new; only `last_seen_at` moves. The convention's `updated_at` changes only when a detail actually changed.
+- **A detail the source leaves out never clears what is known.** Only a stated value replaces a stored one, so a page that stops saying "scheduled" does not erase it, and only a stated `cancelled` cancels an event. A source can also take a cancellation back by stating `scheduled`.
+- **A guest missing from a listing is never cancelled.** Only a **complete** listing marks a guest `listed = false`, and only for that provider's own source line. An incomplete listing, including an empty one from a page that changed shape, unlists nobody. A guest who returns is listed again with no duplicate.
+- **Hand-made links are never touched.** The service sets an identity's `display_name` but never its `person_id`, nor an appearance's.
+- **Observations** hold a content hash (guest order and `etag` ignored) plus `complete`, and are pruned to the last 3 per page. `IngestResult.changed` says whether the hash differs from the previous observation, which the source health page (3.6) can use.
+- **Not done:** the `identifiers` on a guest (such as TMDB or IMDb ids) are not turned into extra identities yet; Rostercon gives none. Field lengths are not clipped, which SQLite does not need. Fetching and scheduling are 3.4.

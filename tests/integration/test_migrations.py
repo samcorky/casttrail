@@ -34,7 +34,7 @@ def _revisions(database_url: str) -> list[str]:
 def test_upgrade_on_an_empty_database_reaches_head(database_url: str) -> None:
     command.upgrade(_config(database_url), "head")
 
-    assert _revisions(database_url) == ["0007"]
+    assert _revisions(database_url) == ["0008"]
 
 
 def test_upgrade_is_repeatable(database_url: str) -> None:
@@ -43,7 +43,7 @@ def test_upgrade_is_repeatable(database_url: str) -> None:
     command.upgrade(config, "head")
     command.upgrade(config, "head")
 
-    assert _revisions(database_url) == ["0007"]
+    assert _revisions(database_url) == ["0008"]
 
 
 def test_status_page_shows_the_applied_revision(
@@ -52,7 +52,7 @@ def test_status_page_shows_the_applied_revision(
     command.upgrade(_config(database_url), "head")
 
     with TestClient(create_app(Settings(database_url=database_url))) as client:
-        assert "Database revision 0007" in client.get("/status").text
+        assert "Database revision 0008" in client.get("/status").text
 
 
 def _connect(database_url: str) -> sqlite3.Connection:
@@ -94,7 +94,7 @@ def test_upgrading_from_the_previous_revision_keeps_existing_data(
             ("a@example.com",)
         ]
         assert _table_names(connection) >= NEW_TABLES
-    assert _revisions(database_url) == ["0007"]
+    assert _revisions(database_url) == ["0008"]
 
 
 def test_the_migrated_schema_enforces_its_constraints(database_url: str) -> None:
@@ -181,7 +181,7 @@ def test_upgrading_from_watches_keeps_existing_data(database_url: str) -> None:
             "SELECT external_id FROM external_identities"
         ).fetchall() == [("alice-en",)]
         assert _table_names(connection) >= DISCOVERY_TABLES
-    assert _revisions(database_url) == ["0007"]
+    assert _revisions(database_url) == ["0008"]
 
 
 def test_the_migrated_discovery_schema_enforces_its_constraints(
@@ -249,3 +249,82 @@ def test_downgrading_removes_only_the_discovery_tables(database_url: str) -> Non
     assert {"watches", "people", "external_identities"} <= tables
     assert tables.isdisjoint(DISCOVERY_TABLES)
     assert _revisions(database_url) == ["0006"]
+
+
+def _columns(connection: sqlite3.Connection, table: str) -> list[str]:
+    return [row[1] for row in connection.execute(f"PRAGMA table_info({table})")]
+
+
+def test_upgrading_from_discovery_tables_keeps_identities_and_adds_a_name(
+    database_url: str,
+) -> None:
+    config = _config(database_url)
+    command.upgrade(config, "0007")
+    with closing(_connect(database_url)) as connection:
+        assert "display_name" not in _columns(connection, "external_identities")
+        connection.executescript(
+            f"""
+            INSERT INTO people (id, name, created_at) VALUES ('p1', 'Alice', {NOW});
+            INSERT INTO external_identities (id, provider, external_id, person_id,
+                                             created_at)
+                VALUES ('e1', 'tmdb', '1', 'p1', {NOW}),
+                       ('e2', 'rostercon', 'bob-en', NULL, {NOW});
+            """
+        )
+
+    command.upgrade(config, "head")
+
+    with closing(_connect(database_url)) as connection:
+        assert "display_name" in _columns(connection, "external_identities")
+        rows = connection.execute(
+            """
+            SELECT external_id, person_id, display_name FROM external_identities
+            ORDER BY external_id
+            """
+        ).fetchall()
+    assert rows == [("1", "p1", None), ("bob-en", None, None)]
+    assert _revisions(database_url) == ["0008"]
+
+
+def test_the_migrated_name_column_takes_a_name_and_may_stay_empty(
+    database_url: str,
+) -> None:
+    command.upgrade(_config(database_url), "head")
+    with closing(_connect(database_url)) as connection:
+        connection.executescript(
+            f"""
+            INSERT INTO external_identities (id, provider, external_id, display_name,
+                                             created_at)
+                VALUES ('e1', 'rostercon', 'a', 'Paul McGann', {NOW}),
+                       ('e2', 'rostercon', 'b', NULL, {NOW});
+            """
+        )
+        names = connection.execute(
+            "SELECT display_name FROM external_identities ORDER BY external_id"
+        ).fetchall()
+    assert names == [("Paul McGann",), (None,)]
+
+
+def test_downgrading_from_the_name_column_keeps_the_identities(
+    database_url: str,
+) -> None:
+    config = _config(database_url)
+    command.upgrade(config, "head")
+    with closing(_connect(database_url)) as connection:
+        connection.execute(
+            f"""
+            INSERT INTO external_identities (id, provider, external_id, display_name,
+                                             created_at)
+                VALUES ('e1', 'rostercon', 'a', 'Paul McGann', {NOW})
+            """
+        )
+        connection.commit()
+
+    command.downgrade(config, "0007")
+
+    with closing(_connect(database_url)) as connection:
+        assert "display_name" not in _columns(connection, "external_identities")
+        assert connection.execute(
+            "SELECT external_id FROM external_identities"
+        ).fetchall() == [("a",)]
+    assert _revisions(database_url) == ["0007"]
