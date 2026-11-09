@@ -146,10 +146,18 @@ def _who(entries: list[tuple[str | None, str, uuid.UUID | None]]) -> list[object
     ]
 
 
-async def _guest_counts(
+async def guest_counts(
     session: AsyncSession, convention_ids: list[uuid.UUID]
 ) -> dict[uuid.UUID, int]:
-    """Count distinct listed guests per convention, one person once across sources."""
+    """Count distinct listed guests per convention, one person once across sources.
+
+    Args:
+        session: The database session.
+        convention_ids: The conventions to count for.
+
+    Returns:
+        The count for each convention that has any listed guest.
+    """
     if not convention_ids:
         return {}
     rows = await session.execute(
@@ -207,7 +215,7 @@ async def upcoming_events(
         .limit(PAGE_SIZE + 1)
     )
     found = list(await session.scalars(query))
-    counts = await _guest_counts(session, [c.id for c in found[:PAGE_SIZE]])
+    counts = await guest_counts(session, [c.id for c in found[:PAGE_SIZE]])
     rows = [EventRow(c, counts.get(c.id, 0)) for c in found[:PAGE_SIZE]]
     return rows, len(found) > PAGE_SIZE
 

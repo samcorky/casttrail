@@ -182,8 +182,9 @@ class ConventionMerge(Base):
     """A pair of conventions that might be the same event, and what was decided.
 
     The pair is stored once, with the smaller id first. A ``suggested`` pair waits for
-    a person; ``rejected`` pairs are never suggested again; ``merged`` records that the
-    two were joined.
+    a person; ``rejected`` pairs are never suggested again. Joining two conventions
+    deletes one of them, which deletes its pairs too, so ``merged`` is allowed here but
+    never stored.
     """
 
     __tablename__ = "convention_merges"

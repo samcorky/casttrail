@@ -255,8 +255,9 @@ Revisit these only after WP-8, each as its own slice.
 - [x] 5.1 Provider 2 parser against fixtures 🧪
 - [x] 5.2 Strict event dedupe and optional `convention_merges` 🗄️ 🧪
 - [x] 5.3 Cross-source guest handling; conflicts and unknowns displayed
-- [ ] 5.4 Admin merge for uncertain event pairs 👁️ DEMO
-- [ ] ⛔ GATE: the same event from both fixtures shows once with two sources
+- [x] 5.4 Admin merge for uncertain event pairs 👁️ DEMO
+- [x] ⛔ GATE: the same event from both fixtures shows once with two sources
+- [ ] 5.5 Fetch Comiconomicon politely (added after the gate: nothing fetches it yet) and settle how a TMDB person or film finds its Comiconomicon page, since its robots.txt allows no name search 🧪
 
 ### WP-6 ntfy alerts
 - [ ] 6.1 Notification tables and event keys 🗄️ 🧪

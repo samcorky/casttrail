@@ -9,6 +9,7 @@ from casttrail.auth.models import User
 from casttrail.auth.service import AuthService
 from casttrail.auth.throttle import ThrottlePolicy
 from casttrail.config import Settings
+from casttrail.discovery.merging import MergeService
 from casttrail.identity.decisions import DecisionService
 from casttrail.matching.service import MatchService
 from casttrail.providers.base import MetadataProvider
@@ -216,3 +217,18 @@ def get_decision_service(session: SessionDep) -> DecisionService:
 
 
 DecisionServiceDep = Annotated[DecisionService, Depends(get_decision_service)]
+
+
+def get_merge_service(session: SessionDep) -> MergeService:
+    """Build the merge service for a request.
+
+    Args:
+        session: The request's database session.
+
+    Returns:
+        A merge service bound to the session.
+    """
+    return MergeService(session)
+
+
+MergeServiceDep = Annotated[MergeService, Depends(get_merge_service)]
