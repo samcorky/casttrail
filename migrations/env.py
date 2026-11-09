@@ -9,6 +9,7 @@ import casttrail.auth.models
 import casttrail.catalogue.models
 import casttrail.discovery.models
 import casttrail.identity.models
+import casttrail.matching.models
 import casttrail.watching.models  # noqa: F401
 from casttrail.config import Settings
 from casttrail.db import Base, create_engine
