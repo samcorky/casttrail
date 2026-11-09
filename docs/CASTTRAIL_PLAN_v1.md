@@ -236,7 +236,7 @@ Revisit these only after WP-8, each as its own slice.
 - [ ] 3.4 Targeted refresh of what people watch (split into four chunks below). Rostercon is fetched per watched person, not swept in full.
   - [x] 3.4a Parsers for event rows, a person's full-events link and the people sitemap, and name matching 🧪
   - [x] 3.4b Polite fetch client: spacing, backoff on 429 and 503, cached sitemap 🧪
-  - [ ] 3.4c `job_runs`, non-overlapping lock, and the refresh for watched people 🗄️ 🧪
+  - [x] 3.4c `job_runs`, non-overlapping lock, and the refresh for watched people 🗄️ 🧪
   - [ ] 3.4d Scheduler (daily) and an admin-only manual refresh
 - [ ] 3.5 UK events and guests pages, unknowns shown as unknown 👁️ DEMO
 - [ ] 3.6 Source health page; a parse failure keeps old data 🧪
