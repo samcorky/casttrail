@@ -12,6 +12,10 @@ from casttrail.discovery import refresh as refresh_module
 from casttrail.discovery.models import Appearance, AppearanceSource, Convention, JobRun
 from casttrail.discovery.refresh import STALE_AFTER, RosterconRefresh
 from casttrail.discovery.service import DiscoveryService
+from casttrail.identity.decisions import DecisionService
+from casttrail.identity.models import ExternalIdentity, IdentityDecision
+from casttrail.matching.models import Match
+from casttrail.matching.service import MatchService, RematchResult
 from casttrail.providers.base import PersonDetail
 from casttrail.providers.rostercon_client import (
     PeopleIndex,
@@ -696,3 +700,73 @@ async def test_a_refresh_reports_matches_that_went_away(
 
     assert report is not None
     assert report.matches_removed == 2
+
+
+# --- WP-4 gate: a person's correction survives repeated syncs ---------------------
+
+
+async def _snapshot(session: AsyncSession) -> tuple[Any, Any, Any]:
+    decisions = [
+        (str(d.external_identity_id), d.decision)
+        for d in await session.scalars(
+            select(IdentityDecision).order_by(IdentityDecision.id)
+        )
+    ]
+    links = [
+        (i.external_id, str(i.person_id), i.display_name or "")
+        for i in await session.scalars(
+            select(ExternalIdentity)
+            .where(ExternalIdentity.provider == "rostercon")
+            .order_by(ExternalIdentity.external_id)
+        )
+    ]
+    matches = [
+        (m.user_id, m.person_id, m.kind, m.reason, m.created_at)
+        for m in await session.scalars(
+            select(Match).order_by(Match.user_id, Match.person_id, Match.appearance_id)
+        )
+    ]
+    return decisions, links, matches
+
+
+async def test_a_correction_survives_three_more_syncs_and_rematches(
+    db_session: AsyncSession, server: FakeRostercon, users: tuple[User, User]
+) -> None:
+    await _watch(db_session, users[0])
+    shanks = await WatchService(db_session).watch_person(
+        users[0].id, PersonDetail(tmdb_id=7, name="Michael Shanks")
+    )
+    jackson = await WatchService(db_session).watch_person(
+        users[0].id, PersonDetail(tmdb_id=8, name="Andrew Jackson")
+    )
+    await _refresh(db_session, server).run()
+    identities = {
+        i.external_id: i.id
+        for i in await db_session.scalars(
+            select(ExternalIdentity).where(ExternalIdentity.provider == "rostercon")
+        )
+    }
+    decisions = DecisionService(db_session)
+    assert shanks.person_id is not None
+    assert jackson.person_id is not None
+    await decisions.confirm(
+        identities["michael-shanks-en"], shanks.person_id, users[0].id
+    )
+    await decisions.reject(
+        identities["andrew-jackson-en"], jackson.person_id, users[0].id
+    )
+    await MatchService(db_session).rematch()
+    corrected = await _snapshot(db_session)
+    kinds = {(m[1], m[2]) for m in corrected[2]}
+    assert (shanks.person_id, "confirmed") in kinds
+    assert all(person != jackson.person_id for person, _ in kinds)
+
+    for _ in range(3):
+        report = await _refresh(db_session, server).run()
+        assert report is not None
+        assert report.stopped is None
+        assert (report.matches_added, report.matches_removed) == (0, 0)
+        assert await MatchService(db_session).rematch() == RematchResult(0, 0, 0)
+
+    assert await _snapshot(db_session) == corrected
+    assert await _count(db_session, Convention) == 2

@@ -101,8 +101,8 @@ cmd = "pytest --cov --cov-report=term-missing --cov-fail-under=80"
 help = "Run tests with branch coverage (floor rises to 90 by WP-8)"
 
 [tool.poe.tasks.coverage-critical]
-cmd = "coverage report --include=src/casttrail/auth/* --fail-under=95"
-help = "Stricter coverage floor for security-critical code (needs a prior `poe test`)"
+cmd = "coverage report --include=src/casttrail/auth/*,src/casttrail/identity/*,src/casttrail/matching/* --fail-under=95"
+help = "Stricter coverage floor for auth, identity and matching (needs a prior `poe test`)"
 
 [tool.poe.tasks.check]
 sequence = ["format-check", "lint", "typecheck", "test", "coverage-critical"]

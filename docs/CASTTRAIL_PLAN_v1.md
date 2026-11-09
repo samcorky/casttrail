@@ -248,8 +248,8 @@ Revisit these only after WP-8, each as its own slice.
 - [x] 4.3 Matching service and `matches` table with `match_key` 🗄️ 🧪
 - [x] 4.4 "My relevant appearances" page with match reasons 👁️ DEMO
 - [x] 4.5 Admin review UI: confirm, reject, link, unlink, bulk confirm exact names
-- [ ] 4.6 Rematch is idempotent; the correction survives 3 re-syncs 🧪
-- [ ] ⛔ GATE: 95% coverage on `identity/` and `matching/`
+- [x] 4.6 Rematch is idempotent; the correction survives 3 re-syncs 🧪
+- [x] ⛔ GATE: 95% coverage on `identity/` and `matching/`
 
 ### WP-5 Second source
 - [ ] 5.1 Provider 2 parser against fixtures 🧪

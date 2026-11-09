@@ -251,3 +251,8 @@ Found while putting a real instance on Tailscale. Both matter again for WP-8.
 - **Bulk confirm is cautious:** it confirms only guests with exactly one suggestion. A guest suggested for two different people (two users each watching a different person of that name) is left for a person to decide. Each confirmation is saved on its own, so a failure part way leaves the earlier ones in place.
 - **Search:** by part of the name, taken literally (`%`, `_` and `\` are escaped), cut to 100 characters and to 20 results. TMDB identities are never shown as guests. Only the first 500 people are offered to link to, which is plenty for 2 or 3 users.
 - **Decisions are shared:** as decided in 4.2, one confirmation applies to everyone, so this is an admin screen and not a per-user one.
+
+## WP-4.6: corrections survive re-syncs, and the WP-4 gate (2026-11-09)
+
+- **Test:** one test watches two people, refreshes, confirms one guest and rejects another, then refreshes and rematches three more times. Decisions, links, match kinds, reasons and creation times are identical afterwards, no match is added or removed, and no convention is duplicated. Breaking the sync (clearing a link, dropping decisions) or the rematch (ignoring rejections) makes it fail.
+- **Gate:** `poe coverage-critical` now holds `identity/` and `matching/` to 95% as well as `auth/`.
