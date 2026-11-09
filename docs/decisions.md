@@ -243,3 +243,11 @@ Found while putting a real instance on Tailscale. Both matter again for WP-8.
 - **Labels:** "Confirmed" means a person linked the guest; "Possible" means only the name matched. The page says so, because a namesake is possible. No alerts depend on Possible.
 - **Matches stay current:** `rematch` runs after every refresh (even one cut short, since it still stored pages), when a person is watched, and when a watch is removed. The refresh record now counts matches added and removed.
 - **Not done:** there is no screen yet to confirm or reject (4.5), so everything starts as Possible.
+
+## WP-4.5: review guests (2026-11-09)
+
+- **Page:** `/admin/review` (administrators only; 404 for others, and a cross-site post is refused like every other post). It has three parts: guests waiting to be confirmed (name matches, with how many events each is at), linked guests, and a search to link any convention guest to any person.
+- **Actions:** Confirm, Reject, Unlink, and "Confirm all exact-name matches". Every action runs through `DecisionService` and then rematches, so the user pages update at once. Unknown guests or people are a 404 and change nothing.
+- **Bulk confirm is cautious:** it confirms only guests with exactly one suggestion. A guest suggested for two different people (two users each watching a different person of that name) is left for a person to decide. Each confirmation is saved on its own, so a failure part way leaves the earlier ones in place.
+- **Search:** by part of the name, taken literally (`%`, `_` and `\` are escaped), cut to 100 characters and to 20 results. TMDB identities are never shown as guests. Only the first 500 people are offered to link to, which is plenty for 2 or 3 users.
+- **Decisions are shared:** as decided in 4.2, one confirmation applies to everyone, so this is an admin screen and not a per-user one.
