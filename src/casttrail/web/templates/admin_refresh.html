@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Refresh · CastTrail{% endblock %}
+{% block content %}
+<h1>Convention refresh</h1>
+{% if notice %}
+<p role="status"><strong>{{ notice }}</strong></p>
+{% endif %}
+<p>
+  This looks up the people anyone is watching on Rostercon and stores the conventions
+  they are listed for. It asks Rostercon slowly, so a run can take several minutes.
+  {% if schedule.refresh_enabled %}
+  It also runs by itself every day at {{ "%02d"|format(schedule.refresh_hour) }}:00 server time.
+  {% else %}
+  It does not run by itself: set <code>CASTTRAIL_REFRESH_ENABLED=true</code> to run it daily.
+  {% endif %}
+</p>
+<form method="post" action="/admin/refresh">
+  <button type="submit">Refresh now</button>
+</form>
+<h2>Recent runs</h2>
+{% if runs %}
+<table>
+  <thead>
+    <tr><th>Started (UTC)</th><th>Result</th><th>People matched</th><th>Events fetched</th><th>Events changed</th><th>Note</th></tr>
+  </thead>
+  <tbody>
+    {% for item in runs %}
+    <tr>
+      <td>{{ item.run.started_at.strftime("%Y-%m-%d %H:%M") }}</td>
+      <td>{{ item.run.status|capitalize }}</td>
+      <td>{{ item.counts.get("people_matched", "") }} of {{ item.counts.get("people_watched", "") }}</td>
+      <td>{{ item.counts.get("events_fetched", "") }}</td>
+      <td>{{ item.counts.get("events_changed", "") }}</td>
+      <td>{{ item.counts.get("stopped") or "" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>Nothing has run yet.</p>
+{% endif %}
+{% endblock %}

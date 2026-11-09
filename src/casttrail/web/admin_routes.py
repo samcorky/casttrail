@@ -1,3 +1,5 @@
+import asyncio
+import json
 import uuid
 from typing import Annotated
 
@@ -5,7 +7,13 @@ from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from casttrail.auth.errors import AccountError
-from casttrail.web.dependencies import AdminServiceDep, AuthServiceDep, CurrentAdmin
+from casttrail.discovery.schedule import recent_runs, run_in_background
+from casttrail.web.dependencies import (
+    AdminServiceDep,
+    AuthServiceDep,
+    CurrentAdmin,
+    SessionDep,
+)
 from casttrail.web.routes import templates
 
 router = APIRouter(prefix="/admin")
@@ -161,3 +169,73 @@ async def make_admin(
     if await service.make_admin(user_id) is None:
         raise HTTPException(status_code=404)
     return RedirectResponse("/admin/users", status_code=303)
+
+
+_NOTICES = {
+    "started": "A refresh has started. Reload this page in a few minutes.",
+    "running": "A refresh is already running.",
+}
+
+
+def _summary(text: str | None) -> dict[str, object]:
+    """Read a run's stored counts, tolerating a missing or damaged record."""
+    try:
+        value = json.loads(text or "{}")
+    except ValueError:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+@router.get("/refresh", response_class=HTMLResponse)
+async def refresh_page(
+    request: Request,
+    admin: CurrentAdmin,
+    session: SessionDep,
+    notice: str | None = None,
+) -> Response:
+    """Show recent refreshes of the convention data, and a button to run one.
+
+    Args:
+        request: The current request.
+        admin: The signed-in administrator.
+        session: The request's database session.
+        notice: Which message to show after starting a refresh.
+
+    Returns:
+        The page.
+    """
+    runs = [
+        {"run": run, "counts": _summary(run.summary)}
+        for run in await recent_runs(session)
+    ]
+    context = {
+        "user": admin,
+        "runs": runs,
+        "notice": _NOTICES.get(notice or ""),
+        "schedule": request.app.state.settings,
+    }
+    return templates.TemplateResponse(request, "admin_refresh.html", context)
+
+
+@router.post("/refresh", response_model=None)
+async def start_refresh(request: Request, admin: CurrentAdmin) -> RedirectResponse:
+    """Start a refresh now, unless this process is already running one.
+
+    The refresh takes minutes (Rostercon is asked slowly), so it runs in the
+    background and this returns at once.
+
+    Args:
+        request: The current request.
+        admin: The signed-in administrator.
+
+    Returns:
+        A redirect to the refresh page with a message.
+    """
+    del admin  # Only checked: any administrator may start a refresh.
+    task = request.app.state.refresh_task
+    if task is not None and not task.done():
+        return RedirectResponse("/admin/refresh?notice=running", status_code=303)
+    request.app.state.refresh_task = asyncio.create_task(
+        run_in_background(request.app.state.refresher)
+    )
+    return RedirectResponse("/admin/refresh?notice=started", status_code=303)
