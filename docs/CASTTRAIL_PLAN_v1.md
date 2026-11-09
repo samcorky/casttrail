@@ -244,7 +244,7 @@ Revisit these only after WP-8, each as its own slice.
 
 ### WP-4 Relevant appearances + identity
 - [x] 4.1 Identity resolver (manual > shared ID > watched-name *Possible* > unresolved) 🧪
-- [ ] 4.2 `identity_decisions` + rejection persistence 🗄️ 🧪
+- [x] 4.2 `identity_decisions` + rejection persistence 🗄️ 🧪
 - [ ] 4.3 Matching service and `matches` table with `match_key` 🗄️ 🧪
 - [ ] 4.4 "My relevant appearances" page with match reasons 👁️ DEMO
 - [ ] 4.5 Admin review UI: confirm, reject, link, unlink, bulk confirm exact names

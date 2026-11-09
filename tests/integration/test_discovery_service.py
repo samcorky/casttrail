@@ -677,3 +677,37 @@ async def test_a_real_page_that_changed_shape_cannot_remove_known_guests(
 
     assert result.guests_unlisted == 0
     assert all(line.listed for line in (await _lines(db_session)).values())
+
+
+async def test_a_new_event_for_a_guest_linked_by_hand_inherits_the_link(
+    db_session: AsyncSession,
+) -> None:
+    person = Person(name="Paul McGann")
+    db_session.add(person)
+    await db_session.commit()
+    service = DiscoveryService(db_session)
+    first = _convention(source_key="one", name="One")
+    await service.ingest(
+        "rostercon", first, ListingResult(items=[_guest("g-en")], complete=True)
+    )
+    identity = await db_session.scalar(select(ExternalIdentity))
+    assert identity is not None
+    identity.person_id = person.id
+    await db_session.commit()
+
+    second = _convention(source_key="two", name="Two")
+    await service.ingest(
+        "rostercon", second, ListingResult(items=[_guest("g-en")], complete=True)
+    )
+
+    rows = dict(
+        (
+            await db_session.execute(
+                select(Convention.name, Appearance.person_id).join(
+                    Appearance, Appearance.convention_id == Convention.id
+                )
+            )
+        ).all()
+    )
+    assert rows["Two"] == person.id
+    assert rows["One"] is None
