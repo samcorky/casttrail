@@ -3,8 +3,16 @@
 ## Run it in Docker (the way it is meant to be run)
 
 ```
-docker compose up -d --build
+uv run poe docker-up
 ```
+
+| Task | Does |
+|---|---|
+| `poe docker-up` | Builds the image (version taken from git) and starts it, waiting until it is healthy |
+| `poe docker-build` | Builds only |
+| `poe docker-down` | Stops and removes the container; the data volume and backups stay |
+| `poe docker-logs` | Follows the log |
+| `poe docker-config` | Prints the compose config as it will run |
 
 - **Settings:** the same `.env` file is passed into the container. The database path and
   backup folder are set for you (`/data` and `/backups` inside the container).
@@ -20,7 +28,7 @@ docker compose up -d --build
 - **Time:** `TZ` (default `Europe/London`) is the clock for the daily backup and refresh.
 - **Hardened:** read-only root, non-root user, no capabilities, 512 MB memory limit, logs
   rotated at 10 MB x 3.
-- **Update:** `git pull`, then `docker compose up -d --build`. The database is backed up and
+- **Update:** `git pull`, then `uv run poe docker-up`. The database is backed up and
   updated on start.
 - **Logs:** `docker logs -f casttrail`.
 
