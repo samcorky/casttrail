@@ -15,9 +15,12 @@ All via `uv run poe <task>`:
 | `lint` / `lint-fix` | Ruff check / with safe fixes |
 | `typecheck` | `mypy --strict` |
 | `test` | pytest with branch coverage, including `tests/architecture` (archunitpython layering rules) and the pytest-alembic migration checks |
-| `coverage-critical` | 95% coverage floor for `auth/` (run after `test`) |
+| `coverage-critical` | 95% coverage floor for `auth/`, `identity/` and `matching/` (run after `test`) |
 | `check` | Everything CI runs. Run it before presenting work. |
 | `hooks` | Install the prek git hooks |
+| `serve` / `migrate` | Run the app locally / apply migrations by hand |
+| `docker-up` / `docker-build` / `docker-down` / `docker-logs` | Build and run the Docker image (how it is meant to run); see `docs/operations.md` |
+| `generate-icons` | Render the app icons from `logo.svg` (run when the logo changes) |
 
 ## Rules
 
@@ -25,6 +28,8 @@ All via `uv run poe <task>`:
 - `from __future__ import annotations` is banned.
 - HTTP client is `httpx2` (`import httpx2`), as in Menagerist. Do not use `requests` or `httpx`.
 - No live network access in tests. Use saved fixtures.
+- Control time in tests with the `time-machine` library. No helper clock classes, and do not add a `now` parameter just to make time testable.
+- Startup must never crash the app: a problem becomes a plain 503 page and a degraded `/health`, with detail only in the log (see `docs/operations.md`).
 - Providers return data and never touch the database. Core owns persistence, identity, matching and notifications.
 - Imported data is untrusted. A missing listing is never a cancellation. Manual identity decisions are never overwritten by a sync.
 - Every personal query filters by user. Return 404 for missing or not-owned resources.
