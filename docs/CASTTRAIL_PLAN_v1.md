@@ -1,7 +1,7 @@
 # CastTrail: Plan v1
 
 **Replaces:** HLD v0.12 and LLD v0.8, which are now background only. This is the single source of truth.
-**Date:** 2026-11-07 · **Audience:** the developer and coding agents
+**Date:** 2026-11-07 · **Updated:** 2026-11-09 · **Audience:** the developer and coding agents
 
 ## 1. Goal
 
@@ -24,16 +24,18 @@ A self-hosted app for 2-3 trusted users. It watches actors, films and series, fi
 
 ## 3. Architecture
 
-HTTP client: `httpx2` (added with the first provider, WP-2). One FastAPI app, one SQLite file in WAL mode, one worker, in-process APScheduler (pin 3.x). Write transactions use `BEGIN IMMEDIATE` to avoid `SQLITE_BUSY` on lock upgrades. Network calls never run inside a transaction.
+HTTP client: `httpx2` (added with the first provider, WP-2). One FastAPI app, one SQLite file in WAL mode, one worker, in-process APScheduler (pin 3.x, jobs held in memory). Write transactions use `BEGIN IMMEDIATE` to avoid `SQLITE_BUSY` on lock upgrades. Network calls never run inside a transaction. It runs from a Docker image (`compose.yaml`), brings its own database up to date at startup after taking a copy, and starts in a "needs attention" mode instead of crashing when something is wrong (see `docs/operations.md`).
 
 ```
 src/casttrail/
-  main.py config.py db.py
-  auth/ web/ (routes, templates, static)
-  providers/{base.py, tmdb.py, <source1>.py, <source2>.py}
-  identity/ discovery/ matching/ collections/ notifications/ jobs/
-  bond/            # film seed data, eligibility rules
-migrations/  tests/{unit,integration,fixtures}
+  main.py config.py db.py startup.py maintenance.py
+  auth/ catalogue/ watching/ web/ (routes, templates, static)
+  providers/{base.py, tmdb.py, rostercon.py, rostercon_client.py, comiconomicon.py}
+  identity/ (decisions)      matching/ (resolver, service, queries, review)
+  discovery/ (service, dedupe, merging, refresh, schedule, browse, health)
+  planned: notifications/ collections/ bond/
+migrations/ (0001 to 0013)   tests/{unit,integration,architecture,fixtures}
+scripts/ (generate_icons.py, healthcheck.py)   Dockerfile compose.yaml
 ```
 
 **Architecture tests (`tests/architecture`, archunitpython as in Menagerist; they run inside `pytest`):**
@@ -58,6 +60,8 @@ class ConventionProvider(Protocol):
 - `GuestObservation` fields: `source_key`, `name`, `source_url`, `identifiers: dict[str,str]` (e.g. `{"tmdb": "..", "imdb": ".."}`), and optional `attendance_days`, `autograph_available`, `autograph_price`, `status`.
 - `None` means unknown. Explicit cancellation arrives only via `status=cancelled`.
 - **Core removes or flags a guest as "no longer listed" only when `complete=True`.** Disappearance is never cancellation.
+
+**As built.** Each source is a pure parser (HTML or JSON in, data out, no network and no database) plus, for Rostercon, a polite fetcher (at least 10 s between requests, cooldown after 429 or 503, capped body, only its own host). A parser returns the convention and a `ListingResult`; core's `DiscoveryService.ingest(provider, convention, listing)` stores it. Rostercon lists are complete only when the page says so; Comiconomicon's are never complete, because its guest lists come from automated matching. There is no `ConventionProvider` class: the two sources differ too much for one shape to help.
 
 ## 4. Key rules
 
@@ -102,10 +106,12 @@ Alembic is set up at WP-1, and each slice adds only its own tables.
 | 1 | `users` |
 | 2 | `people`, `productions`, `credits`, `external_identities` (unique provider+kind+external_id, nullable `entity_id`), `watches`, `franchises`, `franchise_productions` (manually curated, seeded with Bond) |
 | 3 | `conventions`, `convention_sources` (convention ↔ provider+source_key, unique), `source_observations` (provider, source_key, content_hash, complete, fetched_at; no stored payload; **prune to the last 3 per key**), `appearances` (nullable `person_id`, plus `external_identity_id`), `appearance_sources`, `job_runs` |
-| 4 | `identity_decisions`, `matches` (non-null `match_key`, unique with `user_id`) |
-| 5 | `convention_merges` (admin-confirmed event equivalence) only if auto-merge is not safe |
+| 4 | `identity_decisions` (migration 0010), `matches` (0011; non-null `match_key`, unique with `user_id`) |
+| 5 | `convention_merges` (suggested and rejected pairs; 0012), and each source's own name, dates and venue on `convention_sources` (0013) |
 | 6 | `notification_events`, `user_notifications`, `notification_deliveries`, `ntfy_destinations` |
 | 7 | `collections`, `collection_items`, `signatures`, `eligibility_overrides` |
+
+Built so far: migrations 0001 to 0013 (0009 `job_runs`, 0010 `identity_decisions`, 0011 `matches`, 0012 `convention_merges`, 0013 source views).
 
 ## 6. Work packages
 
@@ -121,7 +127,7 @@ Each WP ends with a runnable app, a UI-visible outcome, a migration test (fresh 
 | **5 Second source** | Provider 2, event dedupe (strict: same country, overlapping dates, normalised name/venue match). Uncertain pairs stay separate, and the admin can merge them. Conflicts shown. | One real event from both fixtures shows once with two sources. |
 | **6 ntfy** | Destination setup and test, outbox, baseline suppression, retries, delivery status page. | A new match alerts once. Re-ingest doesn't resend. Failed sends retry. |
 | **7 Collections + Bond add-on** | Simple collections and signatures in core; Bond is a separate add-on module (`casttrail/bond/`, optional, switched on by a setting). Bond seed (25 films plus the 2 optional), partial unique signer index, eligibility overrides, and guests who can sign unsigned posters. | Two Bond collectors stay independent. The same signer can't fill two posters in one collection. |
-| **8 Deploy** | Docker Compose, migrate-then-start, backup via SQLite backup API (`VACUUM INTO`) and restore test, two-user smoke test, README. | Fresh install works, and a restore from backup works. |
+| **8 Deploy** | Docker Compose, migrate-then-start and backups (both built early, see 8.1 and 8.2), restore test, two-user smoke test, README. | Fresh install works, and a restore from backup works. |
 
 ## 7. Tooling and CI (lean, borrowed from Menagerist)
 
@@ -147,13 +153,19 @@ Each WP ends with a runnable app, a UI-visible outcome, a migration test (fresh 
 | `lint` / `lint-fix` | `ruff check` / `ruff check --fix` |
 | `typecheck` | `mypy` |
 | `test` | `pytest --cov --cov-branch --cov-report=term-missing --cov-fail-under=<N>` |
-| `check` | sequence of `format-check`, `lint`, `typecheck`, `test` |
+| `check` | sequence of `format-check`, `lint`, `typecheck`, `test`, `coverage-critical` |
+| `coverage-critical` | 95% floor for `auth/`, `identity/` and `matching/` (needs a prior `test`) |
+| `serve` / `migrate` | Run the app locally (keep-alive off) / apply migrations by hand |
+| `generate-icons` | Render the app icons from `logo.svg` (run when the logo changes) |
+| `docker-up` / `docker-build` / `docker-down` / `docker-logs` / `docker-config` | Build the image (version from the `calver-scm` CLI) and run it; see `docs/operations.md` |
 
 **CI** is one workflow, `.github/workflows/ci.yml`, triggered on push to `main` and on pull requests. It has **two jobs**: `static` (format-check, lint, typecheck) and `test` (pytest with coverage, including the architecture tests and pytest-alembic checks). Both run on `ubuntu-latest` with `permissions: contents: read`. A Windows job is not required.
 
 **Hooks (prek):** `pre-commit` runs the file-hygiene hooks plus `ruff format` and `ruff check --fix`. `commit-msg` checks Conventional Commits. `pre-push` blocks pushes to `main`. Tests and mypy run in CI, not in hooks, to keep commits fast.
 
-**Coverage:** `--cov-fail-under` starts at 80 in WP-1 and rises to 90 by WP-8. Before WP-4, add a stricter `poe coverage-critical` task using `coverage report --include=... --fail-under=95` for `auth/`, `identity/`, `matching/` and the signer rules. No custom checker script.
+**Coverage:** `--cov-fail-under` starts at 80 in WP-1 and rises to 90 by WP-8. `poe coverage-critical` (done) holds `auth/`, `identity/` and `matching/` to 95%; the signer rules join it in WP-7. Actual coverage is about 99% overall. No custom checker script.
+
+**Test practices (project owner's direction).** Time is controlled with the `time-machine` library, not helper clocks or an injected `now` (older code still has them; see the checklist). New logic gets mutation checks, run with a harness that restores the files in a `finally`. Tests never read a developer's `.env`. No live network in tests.
 
 **Required negative tests:** two-user isolation, 404 on others' IDs, CSRF failure, rejected candidate stays rejected, ambiguous guest gives no alert, incomplete listing deletes nothing, baseline sync sends nothing, duplicate signer rejected.
 
@@ -186,12 +198,24 @@ Entry-point plugins, JSON API, digests, Bond ranking and bipartite assignment, c
 
 Revisit these only after WP-8, each as its own slice.
 
-## 10. Open questions (answer inside WP-0 or WP-1)
+**Planned, from the build.**
+- *Bootstrap 5.3 instead of Pico* (decided by the owner; issue #50). Bootstrap 6 is an alpha (`6.0.0-alpha.1`), so 5.3 is the stable choice. It touches about 25 templates and the tests that check markup, so it is done between chunks, not mixed into one.
+- *Catch-up refresh at startup.* If the refresh is on and the last success is over a day old, run it after the app is up, as the startup backup does. Preferred over an APScheduler SQLAlchemy jobstore, whose pickled jobs cannot carry our live objects and which needs a table outside our migrations.
+- *Restore from the admin page and an off-machine copy of backups.* Restore is a documented manual step for now.
+- *Building and publishing the Docker image in CI.*
+- *GitHub issue templates* (issue #51).
 
-1. Which two convention sites, and are they permitted?
-2. Final auth choice (custom sessions or FastAPI Users)?
-3. Is Python 3.14 compatible with every dependency's wheels? If not, use 3.13.
+## 10. Open questions
+
+Answered:
+1. **Which two sites?** Rostercon (primary) and Comiconomicon. Neither grants permission to scrape, so both are used at personal scale as the owner's call, recorded in `docs/decisions.md`. Comiconomicon's search box (`/xhr/indexautocomplete.php`) is used to turn names into its ids, also the owner's call.
+2. **Auth?** Custom sessions (not FastAPI Users).
+3. **Python 3.14?** Works, including in the Docker image.
+
+Still open:
 4. (For WP-6) Which channels besides ntfy, and in what order: SMTP, Web Push?
+5. (For 5.5d) How a watched film or series finds its Comiconomicon film page beyond an exact title and year match, and whether its `/universe` pages are worth using for franchise watches.
+6. Whether the daily refresh should be on by default (it is off, so nothing contacts a source until the owner chooses).
 
 ## 11. Chunk checklist
 
@@ -240,7 +264,7 @@ Revisit these only after WP-8, each as its own slice.
   - [x] 3.4d Scheduler (daily) and an admin-only manual refresh
 - [x] 3.5 UK events and guests pages, unknowns shown as unknown 👁️ DEMO
 - [x] 3.6 Source health page; a parse failure keeps old data 🧪
-- [ ] ⛔ GATE: double refresh gives no duplicates
+- [x] ⛔ GATE: double refresh gives no duplicates (met by 3.4c's refresh-twice test)
 
 ### WP-4 Relevant appearances + identity
 - [x] 4.1 Identity resolver (manual > shared ID > watched-name *Possible* > unresolved) 🧪
@@ -263,6 +287,16 @@ Revisit these only after WP-8, each as its own slice.
   - [ ] 5.5c Refresh from Comiconomicon for watched people (guest pages, then event pages), as a scheduled job and a button 🧪
   - [ ] 5.5d Watched films and series through their film pages, and health for the second source 🧪
 
+### Added during the build (not in the original plan)
+- [x] A1 Settings read from a `.env` file, with `.env.example`; tests never read it (#54)
+- [x] A2 Startup: automatic database update with a safety copy first, never crash (a plain 503 page and a degraded `/health` instead), and backups: daily, at startup if the newest is old, on demand from the admin Source health page (#55) 🧪
+- [x] A3 Docker image, Compose file, health check and `poe docker-*` tasks; running on the owner's PC behind `tailscale serve` (#56) 🧪
+- [x] A4 Logo: a wavy trail tucked behind the star, an icon generator (`poe generate-icons`) and a test that the committed icons match the logo (PR #59, open) 🧪
+- [ ] A5 Move the UI from Pico to Bootstrap 5.3 (issue #50) 👁️ DEMO
+- [ ] A6 Startup catch-up for the daily refresh 🧪
+- [ ] A7 Move the older tests from injected clocks and `Clock` helpers to `time-machine` 🧪
+- [ ] A8 GitHub issue templates (issue #51)
+
 ### WP-6 ntfy alerts
 - [ ] 6.1 Notification tables and event keys 🗄️ 🧪
 - [ ] 6.2 ntfy adapter, admin-set server, random user topic, test button
@@ -280,49 +314,53 @@ Revisit these only after WP-8, each as its own slice.
 - [ ] ⛔ GATE: duplicate signer rejected under concurrency, two Bond collectors are independent
 
 ### WP-8 Deploy
-- [ ] 8.1 Dockerfile and Compose, migrate-then-start
-- [ ] 8.2 Backup via `VACUUM INTO`, restore test 🧪
+- [x] 8.1 Dockerfile and Compose, migrate-then-start (done early as A2 and A3)
+- [x] 8.2a Backups, by SQLite's online backup API (it copies consistently while the app writes), kept in a folder; done early as A2
+- [ ] 8.2b Restore test 🧪 (restore is documented in `docs/operations.md` but not yet covered by a test)
 - [ ] 8.3 Two-user smoke test, security pass (cookies, `/docs` disabled)
 - [ ] 8.4 README and `docs/decisions.md` cleanup 👁️ DEMO
 - [ ] ⛔ GATE: fresh install and a restore both work
 
 ## 12. Status and handoff
 
-**As of 2026-11-08.** WP-0 and WP-1 are done. `uv run poe check` passes on `main` with 185 tests and about 99.9% coverage, and `auth/` is at 100% against the 95% gate. The WP-1 gate has not been formally reviewed by the project owner yet.
+**As of 2026-11-09.** WP-0 to WP-4 are done and merged. WP-5 is done through 5.5a (the parser for Comiconomicon's search answers); the gate (the same event from both fixtures shows once with two sources) is met. Startup robustness, backups and Docker are in. `uv run poe check` passes on the stack tip with 1202 tests and about 99% coverage; `auth/`, `identity/` and `matching/` are at 100% against the 95% gate. Open PRs, bottom up: #59 (logo), #57 (5.4, merge screen), #58 (5.5a), as one stack on `main`. #9 (Python 3.15 interpreter) is held.
 
-### Done (WP-0, and WP-1 chunks 1.1 to 1.7)
-- Tooling and CI: Ruff, strict mypy, pytest with branch coverage, archunitpython architecture tests, pytest-alembic, prek hooks, `CI passed` and `Hooks: prek (autofix)` as the required checks. `main` is protected and PR-only, squash merge, auto-merge allowed.
-- App shell: `create_app()`, `/health`, status page, local Pico and HTMX.
-- Database: async SQLite (WAL, `BEGIN IMMEDIATE`), Alembic, migrations 0001 to 0004 (baseline, users and sessions, sign-in attempts, known devices).
-- Auth: Argon2id passwords, hashed server-side sessions, strict cookie reader, `SameSite=Lax`, `__Host-Http-` prefix when Secure, CSRF check on every unsafe method, login throttle (5 per email, 20 per address, 15 minute window), device cookie raising the per-account limit to 20 for a known browser.
-- Admin and accounts: first admin from `CASTTRAIL_ADMIN_EMAIL` and `CASTTRAIL_ADMIN_PASSWORD` only on an empty `users` table, admin pages at `/admin/users` (add, disable, enable, make admin; 404 for non-admins; no self-disable and no admin removal), private dashboard at `/`, navigation, change password at `/account/password`.
-- Passwords are 12 to 256 characters when set. Changing one ends every other session, forgets remembered browsers, and counts wrong guesses at the current password towards the sign-in throttle.
-- Public `/status` shows version and DB revision (it must work before login and before migration). `/health` discloses nothing.
-- Logo, icons and favicon in `web/static/img/` (the icon set is ready for the optional PWA).
-- Architecture rules cover `auth`, `identity` and `matching` (framework-free), `providers` (no database, auth or web), and a ban on `requests` and `httpx` by import scan.
-- Renovate configured and running (autofix.ci app also installed).
+### Running now
+CastTrail runs in Docker on the owner's PC, reached over Tailscale at `https://sam-pc.tail0bed4.ts.net` (`tailscale serve` to `127.0.0.1:8002`). The database is in the named volume `casttrail_casttrail-data`, backups go to `./backups`, and settings are in `.env` (ignored by git). The Rostercon refresh is **off** (`CASTTRAIL_REFRESH_ENABLED=false`), so nothing contacts a source until the admin presses "Refresh now" or turns the timer on. Comiconomicon is not fetched yet. How to run, update, back up and restore: `docs/operations.md`.
+
+### Done
+- **WP-0 and WP-1:** tooling and CI (Ruff, strict mypy, pytest with branch coverage, archunitpython architecture tests, pytest-alembic, prek, required checks `CI passed` and `Hooks: prek (autofix)`, protected `main`, squash merge), app shell, async SQLite (WAL, `BEGIN IMMEDIATE`), auth (Argon2id, hashed sessions, strict cookies, CSRF by `Sec-Fetch-Site`, login throttle with a device cookie), admin bootstrap and user pages, dashboard, burger nav, logo and icons.
+- **WP-2:** TMDB provider, search with posters and photos, watch and unwatch. Franchises (2.5) are deferred to WP-6.
+- **WP-3:** Rostercon parser, polite fetcher, targeted refresh of what people watch, `job_runs` lock, daily timer and "Refresh now", Events and guest pages (unknowns shown as unknown), Source health page.
+- **WP-4:** identity resolver, shared identity decisions, matches (Possible and Confirmed), "My appearances", admin review screen with bulk confirm.
+- **WP-5:** Comiconomicon parser (events, guests, films and series), strict event dedupe, each source's own view and cross-source guests shown once, admin merge of uncertain pairs, search-answer parser.
+- **Ops:** `.env`, automatic update with a safety copy, never-crash startup, backups, Docker, poe docker tasks, icon generator.
 
 ### Next
-1. **WP-1 gate review**, then WP-2 (Watchlist), starting with the TMDB provider (2.1). The TMDB API key and how it is configured are not decided yet.
-2. WP-0 findings that matter later (see `docs/decisions.md`): Rostercon is primary and Comiconomicon secondary, neither grants explicit permission to scrape, and both parse from saved fixtures. Open: where Rostercon shows a cancelled guest (WP-3), and Rostercon returns 503 under load, so use a slow rate and a cache.
+1. **A5 Bootstrap 5.3**, then **5.5b to 5.5d** (fetch Comiconomicon: a polite fetcher and cached lookup, a refresh for watched people, then films and series), then **WP-6 ntfy** together with franchise and Bond watches (2.5), then WP-7 and the rest of WP-8.
+2. Owner actions: merge #59, #57, #58 (bottom up); put a fresh TMDB key in `.env` (the one pasted into chat should be rotated); set Docker Desktop to start with Windows; copy `./backups` somewhere off the machine now and then.
 
 ### Decisions made since the plan was written
-- Providers stay in-tree behind a `Protocol`; entry points deferred.
-- HTMX only, no JSON API.
-- Own sessions and cookies instead of FastAPI Users.
+- Providers stay in-tree behind a `Protocol`; entry points deferred. Bond is an optional in-tree module, not a plugin.
+- HTMX only, no JSON API. Own sessions and cookies instead of FastAPI Users.
 - CSRF by `Sec-Fetch-Site` and `Origin` (no form tokens). A request with neither header is refused, so `curl` needs an `Origin` header.
 - `SameSite=Lax`, not `Strict`, so a link from an ntfy alert opens the app signed in.
-- HTTP client is `httpx2`. Server is Granian (`uv run poe serve`).
-- Architecture rules are archunitpython tests, not Import Linter.
+- HTTP client is `httpx2`. Server is Granian. Architecture rules are archunitpython tests.
+- Only **confirmed** matches will alert; a name match is *Possible* until a person confirms it. Identity decisions are shared by all users and made on an admin-only screen.
+- A target-only refresh: only what people watch is fetched, never a full sweep.
+- Rostercon's details win for a merged event; other sources only fill gaps. A source's two events are never joined; a merge by hand cannot be undone. Comiconomicon guest lists are never "complete".
+- The Comiconomicon search box is used by the owner's decision (recorded in `docs/decisions.md`).
+- Docker: one container, database in a named volume (SQLite WAL is unreliable on a Windows bind mount), backups to a plain folder, published on `127.0.0.1:8002`.
+- Startup: update the database automatically with a safety copy first (and not at all if the copy fails); a startup problem gives a plain 503 page and a degraded `/health`, not a crash.
+- APScheduler stays in memory; a startup catch-up is preferred to a jobstore.
+- Tests use `time-machine`. The UI moves to Bootstrap 5.3, not the 6.0 alpha.
 
 ### Open items and reminders
-- `AuthService.forget_devices` is now called on password change and when an admin disables an account. Any later password reset or session revocation must call it too.
-- Client address comes from `request.client.host`. Behind a reverse proxy it needs a trusted-proxy setting (WP-8), or the per-address limit is shared by everyone.
-- `sessions.client_ip` and `user_agent` are stored but no page shows them yet. A sessions page grouped by browser is a candidate now that 1.6 is done.
-- There is no password reset (an admin cannot set another user's password yet) and no way to remove admin rights. Both were left out on purpose; add them when needed.
-- Polish noted in the 1.6c demo: the Sign out button in the nav is heavier than the links beside it, and the Users table buttons are large.
-- The `/status` page has no navigation, only a link back to the dashboard.
-- Renovate PR #9 (Python 3.15 interpreter) is open and blocked. Hold it until there is more code to test against.
-- Menagerist issues raised from this work: #297 (Renovate automerge settings, milestone v0.2026.11.3) and #312 (device cookie and device-grouped sessions, milestone Identity and ownership).
+- `AuthService.forget_devices` is called on password change and when an admin disables an account. Any later password reset or session revocation must call it too.
+- The client address comes from `request.client.host`. Behind the Tailscale proxy that is the proxy, so the per-address sign-in limit is shared by everyone; it needs a trusted-proxy setting.
+- `sessions.client_ip` and `user_agent` are stored but no page shows them yet.
+- There is no password reset (an admin cannot set another user's password) and no way to remove admin rights. Both were left out on purpose.
+- Renovate PR #9 (Python 3.15 interpreter) is open and held until there is more code to test against.
+- Issues: #50 (Bootstrap), #51 (issue templates). Menagerist issues raised from this work: #297 (Renovate automerge settings) and #312 (device cookie and device-grouped sessions).
 - PyCharm exports `VIRTUAL_ENV` pointing at a stray `venv/` folder, which makes uv warn. Repoint the interpreter to `.venv` and delete `venv/`.
 - GitHub repo is public (existing `LICENSE` is MIT).
