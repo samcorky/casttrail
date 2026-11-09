@@ -101,7 +101,7 @@ Alembic is set up at WP-1, and each slice adds only its own tables.
 |---|---|
 | 1 | `users` |
 | 2 | `people`, `productions`, `credits`, `external_identities` (unique provider+kind+external_id, nullable `entity_id`), `watches`, `franchises`, `franchise_productions` (manually curated, seeded with Bond) |
-| 3 | `conventions`, `convention_sources` (convention ↔ provider+source_key, unique), `source_observations` (provider, source_key, content_hash, bounded `payload_json`, fetched_at; **prune to the last 3 per key**), `appearances` (nullable `person_id`, plus `external_identity_id`), `appearance_sources`, `job_runs` |
+| 3 | `conventions`, `convention_sources` (convention ↔ provider+source_key, unique), `source_observations` (provider, source_key, content_hash, complete, fetched_at; no stored payload; **prune to the last 3 per key**), `appearances` (nullable `person_id`, plus `external_identity_id`), `appearance_sources`, `job_runs` |
 | 4 | `identity_decisions`, `matches` (non-null `match_key`, unique with `user_id`) |
 | 5 | `convention_merges` (admin-confirmed event equivalence) only if auto-merge is not safe |
 | 6 | `notification_events`, `user_notifications`, `notification_deliveries`, `ntfy_destinations` |
@@ -231,7 +231,7 @@ Revisit these only after WP-8, each as its own slice.
 
 ### WP-3 Event browser
 - [x] 3.1 Provider 1 parser against fixtures, `ListingResult.complete` logic 🧪 (Rostercon event page parser only; fetching and discovery come in 3.3 and 3.4)
-- [ ] 3.2 Convention, source, observation and appearance tables 🗄️
+- [x] 3.2 Convention, source, observation and appearance tables 🗄️ (`job_runs` is created with 3.4)
 - [ ] 3.3 Discovery service: idempotent upsert, provenance, prune observations 🧪
 - [ ] 3.4 `job_runs`, non-overlapping lock, scheduler, manual refresh
 - [ ] 3.5 UK events and guests pages, unknowns shown as unknown 👁️ DEMO
