@@ -4,7 +4,7 @@ import unicodedata
 from dataclasses import dataclass
 from datetime import date
 from html.parser import HTMLParser
-from typing import TYPE_CHECKING, Any
+from typing import Any
 from urllib.parse import urlsplit
 
 from casttrail.providers.base import (
@@ -13,9 +13,6 @@ from casttrail.providers.base import (
     GuestObservation,
     ListingResult,
 )
-
-if TYPE_CHECKING:
-    from collections.abc import Iterable
 
 PROVIDER_ID = "rostercon"
 HOST = "www.rostercon.com"
@@ -252,8 +249,6 @@ _MONTHS = {
 }
 _DATE = re.compile(r"\b([A-Z][a-z]{2}) (\d{1,2})(?:st|nd|rd|th) (\d{4})\b")
 _EVENTS_LINK = re.compile(r"/en/people/[^/]+/events/\d+")
-_PEOPLE_LOC = re.compile(r"<loc>\s*([^<\s]+)\s*</loc>")
-_MAX_SITEMAP_ENTRIES = 50_000
 
 
 @dataclass(frozen=True)
@@ -388,28 +383,6 @@ def parse_all_events_link(html: str) -> str | None:
     return None
 
 
-def parse_people_sitemap(xml: str) -> list[PersonPage]:
-    """Read the English person pages from one of Rostercon's people sitemaps.
-
-    The sitemap is flat, so its addresses are read with a pattern rather than an XML
-    parser, which avoids the entity-expansion attacks an XML parser is open to.
-
-    Args:
-        xml: The sitemap's text.
-
-    Returns:
-        Each person once, in file order.
-    """
-    people: dict[str, PersonPage] = {}
-    for found in _PEOPLE_LOC.finditer(xml):
-        slug = _slug(found.group(1), PERSON_PATH)
-        if slug is not None and slug not in people:
-            people[slug] = PersonPage(slug=slug, url=found.group(1))
-        if len(people) >= _MAX_SITEMAP_ENTRIES:
-            break
-    return list(people.values())
-
-
 def slugify_name(name: str) -> str:
     """Turn a name into the form Rostercon's addresses use.
 
@@ -421,24 +394,3 @@ def slugify_name(name: str) -> str:
     """
     plain = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
     return re.sub(r"[^a-z0-9]+", "-", plain.lower()).strip("-")
-
-
-def match_people(name: str, people: Iterable[PersonPage]) -> list[PersonPage]:
-    """Find the Rostercon pages that could be a person with this name.
-
-    A page matches when its address is the name's slug, optionally followed by a
-    number (Rostercon's way of telling two people with one name apart) and ``-en``.
-    More than one match means the name is ambiguous, and the caller must not pick.
-
-    Args:
-        name: The person's name as TMDB gives it.
-        people: Rostercon's person pages.
-
-    Returns:
-        Every page that could be them, possibly none.
-    """
-    wanted = slugify_name(name)
-    if not wanted:
-        return []
-    pattern = re.compile(rf"{re.escape(wanted)}(?:-\d+)?(?:-en)?")
-    return [person for person in people if pattern.fullmatch(person.slug)]

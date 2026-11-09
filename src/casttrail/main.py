@@ -18,7 +18,6 @@ from casttrail.db import create_engine, create_session_factory
 from casttrail.discovery.schedule import RefreshJob, run_in_background
 from casttrail.logging_config import configure_logging
 from casttrail.providers.rostercon_client import (
-    PeopleIndex,
     RosterconFetcher,
     create_client as create_rostercon_client,
 )
@@ -189,9 +188,7 @@ def _start_providers(
         rostercon_http = create_rostercon_client()
         opened.append(rostercon_http)
         fetcher = RosterconFetcher(rostercon_http)
-        app.state.refresher = RefreshJob(
-            app.state.session_factory, fetcher, PeopleIndex(fetcher)
-        )
+        app.state.refresher = RefreshJob(app.state.session_factory, fetcher)
     else:
         app.state.refresher = refresher
     return opened

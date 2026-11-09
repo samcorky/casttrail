@@ -8,13 +8,19 @@ import structlog
 import structlog.testing
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.applications import Starlette
+from starlette.routing import Route
 from starlette.testclient import TestClient
 
 from casttrail.logging_config import REDACTED, configure_logging, redact, use_json
 from casttrail.main import create_app
+from casttrail.web.request_log import RequestLogMiddleware
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, MutableMapping
+
+    from starlette.requests import Request
+    from starlette.responses import Response
 
     from casttrail.config import Settings
 
@@ -254,3 +260,22 @@ def test_a_failing_health_check_is_not_hidden(
     [entry] = _request_events(logs)
     assert entry["status"] == 503
     assert entry["log_level"] == "error"
+
+
+def test_an_error_nothing_else_caught_is_logged_with_its_traceback() -> None:
+    async def boom(_request: Request) -> Response:
+        raise RuntimeError("boom")
+
+    app = Starlette(routes=[Route("/boom", boom)])
+    app.add_middleware(RequestLogMiddleware)
+
+    with (
+        TestClient(app, raise_server_exceptions=False) as client,
+        structlog.testing.capture_logs() as logs,
+    ):
+        client.get("/boom?secret=1")
+
+    [entry] = [e for e in logs if e["event"] == "request_failed"]
+    assert entry["path"] == "/boom"
+    assert entry["exc_info"] is True
+    assert "secret=1" not in repr(logs)

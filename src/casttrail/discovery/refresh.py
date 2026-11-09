@@ -17,12 +17,11 @@ from casttrail.providers.base import ProviderError
 from casttrail.providers.rostercon import (
     PROVIDER_ID,
     ListedEvent,
-    match_people,
     parse_all_events_link,
     parse_event_page,
     parse_event_rows,
 )
-from casttrail.providers.rostercon_client import RosterconUnavailableError
+from casttrail.providers.rostercon_client import RosterconUnavailableError, find_people
 from casttrail.watching.models import Watch
 
 if TYPE_CHECKING:
@@ -32,8 +31,7 @@ if TYPE_CHECKING:
 
     from sqlalchemy.ext.asyncio import AsyncSession
 
-    from casttrail.providers.rostercon import PersonPage
-    from casttrail.providers.rostercon_client import PeopleIndex, RosterconFetcher
+    from casttrail.providers.rostercon_client import FoundPerson, RosterconFetcher
 
 logger = structlog.get_logger(__name__)
 
@@ -81,7 +79,6 @@ class RosterconRefresh:
         self,
         session: AsyncSession,
         fetcher: RosterconFetcher,
-        index: PeopleIndex,
         *,
         now: Callable[[], datetime] = utc_now,
     ) -> None:
@@ -90,12 +87,10 @@ class RosterconRefresh:
         Args:
             session: The database session to work in.
             fetcher: Fetches Rostercon pages politely.
-            index: Rostercon's list of person pages.
             now: The clock, replaceable in tests.
         """
         self._session = session
         self._fetcher = fetcher
-        self._index = index
         self._now = now
 
     async def run(self) -> RefreshReport | None:
@@ -125,15 +120,6 @@ class RosterconRefresh:
                 "refresh_stopped",
                 reason="cooldown",
                 retry_after_s=wait.total_seconds() if wait else None,
-            )
-        except ProviderError as error:
-            report.stopped = "Rostercon could not be read"
-            # The message holds no address or secret by design, so it is safe to log.
-            logger.warning(
-                "refresh_stopped",
-                reason="provider_error",
-                error=str(error),
-                cause=type(error.__cause__).__name__ if error.__cause__ else None,
             )
         except BaseException:
             await self._session.rollback()
@@ -215,34 +201,44 @@ class RosterconRefresh:
         logger.info("refresh_people", watched=len(people))
         if not people:
             return
-        known = await self._index.people()
         events: dict[str, ListedEvent] = {}
         for _, name in people:
-            await self._collect(name, known, events, report)
+            await self._collect(name, events, report)
         await self._fetch_events(events, report)
+
+    async def _find(self, name: str, report: RefreshReport) -> FoundPerson | None:
+        """Look the name up; count and log it unless exactly one page is theirs."""
+        try:
+            matches = await find_people(self._fetcher, name)
+        except RosterconUnavailableError:
+            raise
+        except ProviderError as error:
+            report.people_failed += 1
+            logger.warning("person_failed", person=name, error=str(error))
+            return None
+        if not matches:
+            report.people_unmatched += 1
+            logger.info("person_unmatched", person=name)
+            return None
+        if len(matches) > 1:
+            report.people_ambiguous += 1
+            slugs = [m.page.slug for m in matches]
+            logger.warning("person_ambiguous", person=name, candidates=slugs)
+            return None
+        return matches[0]
 
     async def _collect(
         self,
         name: str,
-        known: list[PersonPage],
         events: dict[str, ListedEvent],
         report: RefreshReport,
     ) -> None:
-        matches = match_people(name, known)
-        if not matches:
-            report.people_unmatched += 1
-            logger.info("person_unmatched", person=name)
-            return
-        if len(matches) > 1:
-            report.people_ambiguous += 1
-            logger.warning(
-                "person_ambiguous", person=name, candidates=[m.slug for m in matches]
-            )
+        found = await self._find(name, report)
+        if found is None:
             return
         try:
-            page = await self._fetcher.get(matches[0].url)
-            rows = parse_event_rows(page.text).events
-            link = parse_all_events_link(page.text)
+            rows = parse_event_rows(found.text).events
+            link = parse_all_events_link(found.text)
             if link is not None:
                 rows += parse_event_rows((await self._fetcher.get(link)).text).events
         except RosterconUnavailableError:
@@ -252,9 +248,8 @@ class RosterconRefresh:
             logger.warning("person_failed", person=name, error=str(error))
             return
         report.people_matched += 1
-        logger.info(
-            "person_matched", person=name, slug=matches[0].slug, events_listed=len(rows)
-        )
+        slug = found.page.slug
+        logger.info("person_matched", person=name, slug=slug, events_listed=len(rows))
         for event in rows:
             events.setdefault(event.source_key, event)
 

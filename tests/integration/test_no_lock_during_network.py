@@ -33,7 +33,7 @@ from casttrail.providers.base import (
     PersonSummary,
     Production,
 )
-from casttrail.providers.rostercon_client import PeopleIndex, RosterconUnavailableError
+from casttrail.providers.rostercon_client import RosterconUnavailableError
 from casttrail.watching.service import WatchService
 
 if TYPE_CHECKING:
@@ -237,7 +237,6 @@ async def test_a_refresh_waiting_on_rostercon_does_not_hold_the_write_lock(
     refresh = RosterconRefresh(
         db_session,
         cast("RosterconFetcher", fetcher),
-        PeopleIndex(cast("RosterconFetcher", fetcher)),
     )
     assert db_session.bind is not None
     other_session = async_sessionmaker(db_session.bind, expire_on_commit=False)

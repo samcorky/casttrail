@@ -23,11 +23,7 @@ from casttrail.discovery.models import JobRun
 from casttrail.discovery.refresh import RefreshReport
 from casttrail.discovery.schedule import RefreshJob, recent_runs, run_in_background
 from casttrail.main import _start_scheduler, create_app
-from casttrail.providers.rostercon_client import (
-    PeopleIndex,
-    RosterconFetcher,
-    create_client,
-)
+from casttrail.providers.rostercon_client import RosterconFetcher, create_client
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -438,7 +434,7 @@ async def test_the_refresh_job_opens_its_own_session_for_each_run(
     assert db_session.bind is not None
     factory = async_sessionmaker(db_session.bind, expire_on_commit=False)
     fetcher = RosterconFetcher(create_client(transport=httpx2.MockTransport(nothing)))
-    job = RefreshJob(factory, fetcher, PeopleIndex(fetcher))
+    job = RefreshJob(factory, fetcher)
 
     first = await job.run()
     second = await job.run()

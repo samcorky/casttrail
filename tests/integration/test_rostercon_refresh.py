@@ -17,11 +17,7 @@ from casttrail.identity.models import ExternalIdentity, IdentityDecision
 from casttrail.matching.models import Match
 from casttrail.matching.service import MatchService, RematchResult
 from casttrail.providers.base import PersonDetail
-from casttrail.providers.rostercon_client import (
-    PeopleIndex,
-    RosterconFetcher,
-    create_client,
-)
+from casttrail.providers.rostercon_client import RosterconFetcher, create_client
 from casttrail.watching.models import Watch
 from casttrail.watching.service import WatchService
 
@@ -40,12 +36,6 @@ EVENTS_URL = "/en/people/paul-mcgann-en/events/18489"
 # Paul McGann's real rows: after 2026-11-08 only these two are still to come.
 LOVE = "for-the-love-of-time-space-2027"  # 2027-02-13
 PENSACON = "pensacon-2027"  # 2027-02-19
-
-
-def _sitemap(*slugs: str) -> str:
-    return "".join(
-        f"<loc>https://www.rostercon.com/en/people/{slug}</loc>" for slug in slugs
-    )
 
 
 def _read(name: str) -> str:
@@ -72,10 +62,6 @@ class FakeRostercon:
 
     def __init__(self) -> None:
         self.pages: dict[str, tuple[int, str]] = {
-            "/acteurs-sitemap.xml": (
-                200,
-                "<loc>https://www.rostercon.com/en/people/paul-mcgann-en</loc>",
-            ),
             PAUL_URL: (200, _read("person_paul-mcgann-en_page.html")),
             EVENTS_URL: (200, _read("person_paul-mcgann-en_events_page1.html")),
         }
@@ -130,8 +116,7 @@ async def _watch(
 
 
 def _refresh(session: AsyncSession, server: FakeRostercon) -> RosterconRefresh:
-    fetcher = server.fetcher()
-    return RosterconRefresh(session, fetcher, PeopleIndex(fetcher), now=Clock())
+    return RosterconRefresh(session, server.fetcher(), now=Clock())
 
 
 async def _count(session: AsyncSession, model: Any) -> int:
@@ -226,10 +211,6 @@ async def test_two_people_at_the_same_event_fetch_it_once(
 ) -> None:
     await _watch(db_session, users[0])
     await _watch(db_session, users[0], "Paula McGann", tmdb_id=2)
-    server.pages["/acteurs-sitemap.xml"] = (
-        200,
-        _sitemap("paul-mcgann-en", "paula-mcgann-en"),
-    )
     server.pages["/en/people/paula-mcgann-en"] = server.pages[PAUL_URL]
     server.pages["/en/people/paula-mcgann-en/events/18489"] = server.pages[EVENTS_URL]
 
@@ -280,24 +261,30 @@ async def test_a_person_with_no_rostercon_page_is_counted_and_not_guessed(
 
     assert report is not None
     assert report.people_unmatched == 1
-    assert server.requests == ["/acteurs-sitemap.xml", "/acteurs-sitemap2.xml"]
+    # Asked for directly: the two forms of the name, then the two forms of a second
+    # person with it, which is how we learn there is nobody to be ambiguous with.
+    assert server.requests == [
+        "/en/people/zed-nobody-en",
+        "/en/people/zed-nobody",
+        "/en/people/zed-nobody-2-en",
+        "/en/people/zed-nobody-2",
+    ]
 
 
 async def test_a_name_with_two_pages_is_ambiguous_and_not_guessed(
     db_session: AsyncSession, server: FakeRostercon, users: tuple[User, User]
 ) -> None:
     await _watch(db_session, users[0], "John Smith")
-    server.pages["/acteurs-sitemap.xml"] = (
-        200,
-        _sitemap("john-smith-en", "john-smith-2-en"),
-    )
+    server.pages["/en/people/john-smith-en"] = server.pages[PAUL_URL]
+    server.pages["/en/people/john-smith-2-en"] = server.pages[PAUL_URL]
 
     report = await _refresh(db_session, server).run()
 
     assert report is not None
     assert report.people_ambiguous == 1
     assert report.people_matched == 0
-    assert not any("/people/" in path for path in server.requests)
+    assert server.event_requests() == []
+    assert not any("/events/" in path for path in server.requests)
 
 
 async def test_a_person_page_that_fails_does_not_stop_the_others(
@@ -305,10 +292,7 @@ async def test_a_person_page_that_fails_does_not_stop_the_others(
 ) -> None:
     await _watch(db_session, users[0], "Aaron Gone", tmdb_id=5)
     await _watch(db_session, users[0])
-    server.pages["/acteurs-sitemap.xml"] = (
-        200,
-        _sitemap("aaron-gone-en", "paul-mcgann-en"),
-    )
+    server.pages["/en/people/aaron-gone-en"] = (500, "")
 
     report = await _refresh(db_session, server).run()
 
@@ -420,30 +404,69 @@ async def test_a_refusal_stops_the_run_but_keeps_what_was_stored(
     assert json.loads(run.summary or "{}")["stopped"] == "Rostercon asked us to wait"
 
 
-async def test_a_refused_sitemap_stops_the_run(
+async def test_a_refused_lookup_stops_the_run(
     db_session: AsyncSession, server: FakeRostercon, users: tuple[User, User]
 ) -> None:
     await _watch(db_session, users[0])
-    server.pages["/acteurs-sitemap.xml"] = (429, "")
+    server.pages[PAUL_URL] = (429, "")
 
     report = await _refresh(db_session, server).run()
 
     assert report is not None
     assert report.stopped == "Rostercon asked us to wait"
-    assert server.requests == ["/acteurs-sitemap.xml"]
+    assert server.requests == [PAUL_URL]
 
 
-async def test_an_unusable_sitemap_stops_the_run_with_its_own_reason(
+async def test_a_lookup_that_errors_fails_that_person_and_not_the_run(
     db_session: AsyncSession, server: FakeRostercon, users: tuple[User, User]
 ) -> None:
     await _watch(db_session, users[0])
-    server.pages["/acteurs-sitemap.xml"] = (500, "")
+    server.pages[PAUL_URL] = (500, "")
 
     report = await _refresh(db_session, server).run()
 
     assert report is not None
-    assert report.stopped == "Rostercon could not be read"
-    assert (await _only_run(db_session)).status == "failed"
+    assert report.stopped is None
+    assert report.people_failed == 1
+    assert (await _only_run(db_session)).status == "succeeded"
+
+
+async def test_a_full_list_that_cannot_be_read_fails_that_person_only(
+    db_session: AsyncSession, server: FakeRostercon, users: tuple[User, User]
+) -> None:
+    await _watch(db_session, users[0])
+    server.pages[EVENTS_URL] = (500, "")
+
+    report = await _refresh(db_session, server).run()
+
+    assert report is not None
+    assert report.stopped is None
+    assert (report.people_failed, report.people_matched) == (1, 0)
+
+
+async def test_a_refusal_fetching_the_full_list_stops_the_run(
+    db_session: AsyncSession, server: FakeRostercon, users: tuple[User, User]
+) -> None:
+    await _watch(db_session, users[0])
+    server.pages[EVENTS_URL] = (429, "")
+
+    report = await _refresh(db_session, server).run()
+
+    assert report is not None
+    assert report.stopped == "Rostercon asked us to wait"
+
+
+async def test_a_name_is_looked_up_in_its_plain_form_when_there_is_no_en_page(
+    db_session: AsyncSession, server: FakeRostercon, users: tuple[User, User]
+) -> None:
+    await _watch(db_session, users[0])
+    server.pages["/en/people/paul-mcgann"] = server.pages.pop(PAUL_URL)
+
+    report = await _refresh(db_session, server).run()
+
+    assert report is not None
+    assert report.people_matched == 1
+    assert server.requests[:2] == [PAUL_URL, "/en/people/paul-mcgann"]
 
 
 async def test_a_later_run_carries_on_after_a_refusal(
@@ -471,8 +494,7 @@ async def test_a_second_refresh_is_turned_away_while_one_is_running(
     clock = Clock()
     db_session.add(JobRun(job="rostercon-refresh", status="running", started_at=START))
     await db_session.commit()
-    fetcher = server.fetcher()
-    refresh = RosterconRefresh(db_session, fetcher, PeopleIndex(fetcher), now=clock)
+    refresh = RosterconRefresh(db_session, server.fetcher(), now=clock)
 
     report = await refresh.run()
 
