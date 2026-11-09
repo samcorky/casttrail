@@ -236,3 +236,10 @@ Found while putting a real instance on Tailscale. Both matter again for WP-8.
 - **Service:** `matching/service.py`. `MatchService.rematch()` recomputes every match from the current guests, watches and decisions and brings the table into line: it adds, changes (kind, reason) and removes, all or nothing. It only reads decisions, never writes them. Running it twice changes nothing, and `updated_at` moves only on a real change.
 - **Rules applied:** only guests with a source still listing them count, so a guest who drops off loses the match and gets it back if relisted. A guest linked by hand is `confirmed` for users who watch that person and invisible to others. Exact-name matches are `possible`. A rejection hides the guest from every user. Two watched namesakes are not guessed.
 - **Not done:** nothing calls `rematch` yet. 4.4 shows the matches and later chunks run it after each refresh; the refresh job does not run it yet.
+
+## WP-4.4: my relevant appearances (2026-11-09)
+
+- **Page:** `/appearances` ("My appearances" in the nav) lists where the signed-in user's watched people will be, soonest first, from `matches` filtered by that user. Finished events are left out (2-day grace); undated ones come last; confirmed sorts before possible on the same day. Each row says why it matched, and a cancelled or postponed convention is flagged.
+- **Labels:** "Confirmed" means a person linked the guest; "Possible" means only the name matched. The page says so, because a namesake is possible. No alerts depend on Possible.
+- **Matches stay current:** `rematch` runs after every refresh (even one cut short, since it still stored pages), when a person is watched, and when a watch is removed. The refresh record now counts matches added and removed.
+- **Not done:** there is no screen yet to confirm or reject (4.5), so everything starts as Possible.

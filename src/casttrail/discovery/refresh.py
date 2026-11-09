@@ -10,6 +10,7 @@ from casttrail.catalogue.models import Person
 from casttrail.db import utc_now
 from casttrail.discovery.models import JobRun
 from casttrail.discovery.service import DiscoveryService
+from casttrail.matching.service import MatchService
 from casttrail.providers.base import ProviderError
 from casttrail.providers.rostercon import (
     PROVIDER_ID,
@@ -57,6 +58,8 @@ class RefreshReport:
     events_unreadable: int = 0
     events_failed: int = 0
     events_deferred: int = 0
+    matches_added: int = 0
+    matches_removed: int = 0
     # Why the run stopped early, if it did.
     stopped: str | None = None
 
@@ -116,8 +119,15 @@ class RosterconRefresh:
             report.stopped = "The refresh crashed"
             await self._finish(job_id, report)
             raise
+        await self._rematch(report)
         await self._finish(job_id, report)
         return report
+
+    async def _rematch(self, report: RefreshReport) -> None:
+        """Bring matches up to date with whatever was stored, even by a short run."""
+        result = await MatchService(self._session, now=self._now).rematch()
+        report.matches_added = result.added
+        report.matches_removed = result.removed
 
     async def _acquire(self) -> JobRun | None:
         now = self._now()

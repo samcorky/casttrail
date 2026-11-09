@@ -246,7 +246,7 @@ Revisit these only after WP-8, each as its own slice.
 - [x] 4.1 Identity resolver (manual > shared ID > watched-name *Possible* > unresolved) 🧪
 - [x] 4.2 `identity_decisions` + rejection persistence 🗄️ 🧪
 - [x] 4.3 Matching service and `matches` table with `match_key` 🗄️ 🧪
-- [ ] 4.4 "My relevant appearances" page with match reasons 👁️ DEMO
+- [x] 4.4 "My relevant appearances" page with match reasons 👁️ DEMO
 - [ ] 4.5 Admin review UI: confirm, reject, link, unlink, bulk confirm exact names
 - [ ] 4.6 Rematch is idempotent; the correction survives 3 re-syncs 🧪
 - [ ] ⛔ GATE: 95% coverage on `identity/` and `matching/`

@@ -18,6 +18,7 @@ from casttrail.providers.rostercon_client import (
     RosterconFetcher,
     create_client,
 )
+from casttrail.watching.models import Watch
 from casttrail.watching.service import WatchService
 
 if TYPE_CHECKING:
@@ -646,3 +647,52 @@ async def test_a_page_that_stops_parsing_keeps_what_was_stored_before(
         .where(AppearanceSource.listed.is_(False))
     )
     assert unlisted == 0
+
+
+async def test_a_refresh_matches_the_guests_it_stored_to_watched_people(
+    db_session: AsyncSession, server: FakeRostercon, users: tuple[User, User]
+) -> None:
+    await _watch(db_session, users[0])
+    await _watch(db_session, users[1], "Michael Shanks", 7)
+
+    report = await _refresh(db_session, server).run()
+    again = await _refresh(db_session, server).run()
+
+    assert report is not None
+    assert again is not None
+    assert report.matches_added == 2  # Michael Shanks at each of the two events
+    assert (again.matches_added, again.matches_removed) == (0, 0)
+    summary = json.loads(
+        (await db_session.scalars(select(JobRun.summary))).first() or "{}"
+    )
+    assert summary["matches_added"] in (0, 2)
+
+
+async def test_matches_are_updated_even_when_the_run_is_cut_short(
+    db_session: AsyncSession, server: FakeRostercon, users: tuple[User, User]
+) -> None:
+    await _watch(db_session, users[0])
+    await _watch(db_session, users[1], "Michael Shanks", 7)
+    server.pages[f"/en/event-convention/{PENSACON}"] = (503, "")
+
+    report = await _refresh(db_session, server).run()
+
+    assert report is not None
+    assert report.stopped is not None
+    assert report.matches_added == 1
+
+
+async def test_a_refresh_reports_matches_that_went_away(
+    db_session: AsyncSession, server: FakeRostercon, users: tuple[User, User]
+) -> None:
+    await _watch(db_session, users[0])
+    await _watch(db_session, users[1], "Michael Shanks", 7)
+    await _refresh(db_session, server).run()
+    watch = await db_session.scalar(select(Watch).where(Watch.user_id == users[1].id))
+    assert watch is not None
+    await WatchService(db_session).unwatch(users[1].id, watch.id)
+
+    report = await _refresh(db_session, server).run()
+
+    assert report is not None
+    assert report.matches_removed == 2

@@ -9,6 +9,7 @@ from casttrail.auth.models import User
 from casttrail.auth.service import AuthService
 from casttrail.auth.throttle import ThrottlePolicy
 from casttrail.config import Settings
+from casttrail.matching.service import MatchService
 from casttrail.providers.base import MetadataProvider
 from casttrail.watching.service import WatchService
 from casttrail.web.cookies import read_session_token
@@ -184,3 +185,18 @@ def get_watch_service(session: SessionDep) -> WatchService:
 
 
 WatchServiceDep = Annotated[WatchService, Depends(get_watch_service)]
+
+
+def get_match_service(session: SessionDep) -> MatchService:
+    """Build the match service for a request.
+
+    Args:
+        session: The request's database session.
+
+    Returns:
+        A match service bound to the session.
+    """
+    return MatchService(session)
+
+
+MatchServiceDep = Annotated[MatchService, Depends(get_match_service)]
