@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Source health · CastTrail{% endblock %}
+{% block content %}
+<h1>Source health</h1>
+<p>A page that cannot be read never removes what is already stored. Warnings mean look at it, not that data was lost.</p>
+{% for s in sources %}
+<section>
+  <h2>{{ s.provider|capitalize }}</h2>
+  {% if s.warnings %}
+  <ul role="alert">
+    {% for w in s.warnings %}<li><strong>{{ w }}</strong></li>{% endfor %}
+  </ul>
+  {% else %}
+  <p role="status">No problems seen.</p>
+  {% endif %}
+  <dl>
+    <dt>Conventions stored</dt><dd>{{ s.conventions }}</dd>
+    <dt>Last page read</dt><dd>{{ s.last_page_at.strftime("%Y-%m-%d %H:%M") ~ " UTC" if s.last_page_at else "Never" }}</dd>
+    <dt>Last refresh</dt><dd>{% if s.last_run_at %}{{ s.last_run_at.strftime("%Y-%m-%d %H:%M") }} UTC, {{ s.last_run_status }}{% else %}Never{% endif %}</dd>
+    <dt>Last successful refresh</dt><dd>{{ s.last_success_at.strftime("%Y-%m-%d %H:%M") ~ " UTC" if s.last_success_at else "Never" }}</dd>
+    <dt>Failed refreshes in a row</dt><dd>{{ s.failures_in_a_row }}</dd>
+  </dl>
+  <p><a href="/admin/refresh">Refresh runs</a></p>
+</section>
+{% endfor %}
+{% endblock %}

@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 
 from casttrail.auth.service import AuthService
 from casttrail.discovery import refresh as refresh_module
-from casttrail.discovery.models import Appearance, Convention, JobRun
+from casttrail.discovery.models import Appearance, AppearanceSource, Convention, JobRun
 from casttrail.discovery.refresh import STALE_AFTER, RosterconRefresh
 from casttrail.discovery.service import DiscoveryService
 from casttrail.providers.base import PersonDetail
@@ -612,3 +612,37 @@ async def test_taking_over_leaves_finished_runs_alone(
 
     await db_session.refresh(done)
     assert (done.status, done.summary) == ("succeeded", "{}")
+
+
+async def test_a_page_that_stops_parsing_keeps_what_was_stored_before(
+    db_session: AsyncSession, server: FakeRostercon, users: tuple[User, User]
+) -> None:
+    await _watch(db_session, users[0])
+    await _refresh(db_session, server).run()
+    before = (
+        await _count(db_session, Convention),
+        await _count(db_session, Appearance),
+    )
+    names = set(await db_session.scalars(select(Convention.name)))
+    for key in (LOVE, PENSACON):
+        server.pages[f"/en/event-convention/{key}"] = (200, "<html>new design</html>")
+
+    report = await _refresh(db_session, server).run()
+
+    assert report is not None
+    assert report.events_unreadable == 2
+    assert report.events_changed == 0
+    assert (
+        await _count(db_session, Convention),
+        await _count(db_session, Appearance),
+    ) == before
+    assert set(await db_session.scalars(select(Convention.name))) == names
+    assert (
+        await db_session.scalar(select(func.count()).select_from(AppearanceSource))
+    ) == before[1]
+    unlisted = await db_session.scalar(
+        select(func.count())
+        .select_from(AppearanceSource)
+        .where(AppearanceSource.listed.is_(False))
+    )
+    assert unlisted == 0
