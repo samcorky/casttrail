@@ -257,7 +257,11 @@ Revisit these only after WP-8, each as its own slice.
 - [x] 5.3 Cross-source guest handling; conflicts and unknowns displayed
 - [x] 5.4 Admin merge for uncertain event pairs 👁️ DEMO
 - [x] ⛔ GATE: the same event from both fixtures shows once with two sources
-- [ ] 5.5 Fetch Comiconomicon politely (added after the gate: nothing fetches it yet) and settle how a TMDB person or film finds its Comiconomicon page, since its robots.txt allows no name search 🧪
+- [ ] 5.5 Use Comiconomicon for real (added after the gate: nothing fetched it yet). The owner chose its search box, `/xhr/indexautocomplete.php`, to turn names into its ids (see `docs/decisions.md`).
+  - [x] 5.5a Parse the search answers and match a name exactly 🧪
+  - [ ] 5.5b Polite fetcher for Comiconomicon and a cached lookup for watched people 🗄️ 🧪
+  - [ ] 5.5c Refresh from Comiconomicon for watched people (guest pages, then event pages), as a scheduled job and a button 🧪
+  - [ ] 5.5d Watched films and series through their film pages, and health for the second source 🧪
 
 ### WP-6 ntfy alerts
 - [ ] 6.1 Notification tables and event keys 🗄️ 🧪

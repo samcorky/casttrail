@@ -1,9 +1,16 @@
+import json
 import re
+import unicodedata
 from dataclasses import dataclass
 from datetime import date
 from html.parser import HTMLParser
 
-from casttrail.providers.base import ConventionInfo, GuestObservation, ListingResult
+from casttrail.providers.base import (
+    ConventionInfo,
+    GuestObservation,
+    ListingResult,
+    ProviderError,
+)
 
 PROVIDER_ID = "comiconomicon"
 HOST = "comiconomicon.com"
@@ -361,3 +368,160 @@ def parse_event_page(html: str, *, etag: str | None = None) -> ParsedEvent:
         convention,
         ListingResult(items=list(guests.values()), complete=False, etag=etag),
     )
+
+
+# --- the site's own search box -------------------------------------------
+
+# Where a name can be turned into the site's numbers. Not on the robots.txt list of
+# paths, which says nothing against it; the project owner chose to use it (see
+# docs/decisions.md). Low volume, polite spacing and caching are the fetcher's job.
+AUTOCOMPLETE_PATH = "/xhr/indexautocomplete.php"
+KINDS = ("guest", "videomedia", "event")
+MAX_SUGGESTIONS = 100
+_KIND_PATHS = {
+    "guest": _GUEST_PATH,
+    "videomedia": _VIDEOMEDIA_PATH,
+    "event": _EVENT_PATH,
+}
+
+
+@dataclass(frozen=True)
+class Suggestion:
+    """One result of the site's search: a guest, a film or series, or an event."""
+
+    kind: str
+    source_key: str
+    source_url: str
+    name: str
+    # Upcoming appearances the site counts for it.
+    appearances: int
+    # A film or series' year.
+    year: int | None = None
+    # An event's days and place.
+    start_date: date | None = None
+    end_date: date | None = None
+    location: str | None = None
+
+
+@dataclass(frozen=True)
+class SuggestionList:
+    """What a search returned, and how many entries could not be used."""
+
+    items: list[Suggestion]
+    skipped: int
+
+
+def _year(value: object) -> int | None:
+    text = str(value).strip() if value is not None else ""
+    return int(text) if text.isascii() and text.isdigit() and len(text) == 4 else None
+
+
+def _iso_day(value: object) -> date | None:
+    try:
+        return date.fromisoformat(value) if isinstance(value, str) else None
+    except ValueError:
+        return None
+
+
+def _suggestion(entry: object) -> Suggestion | None:
+    if not isinstance(entry, dict):
+        return None
+    kind = entry.get("type")
+    key, name, url = entry.get("id"), entry.get("name"), entry.get("url")
+    if kind not in KINDS or not isinstance(name, str) or not isinstance(key, str):
+        return None
+    found = _path_id(url if isinstance(url, str) else None, _KIND_PATHS[kind])
+    clean = _clean(name)
+    if found is None or not clean or found[0] != key:
+        return None
+    appearances = entry.get("appearances")
+    count = appearances if isinstance(appearances, int) and appearances > 0 else 0
+    base = Suggestion(kind, key, f"{BASE}{found[1]}", clean, count)
+    if kind == "videomedia":
+        return Suggestion(**{**base.__dict__, "year": _year(entry.get("data1"))})
+    if kind == "event":
+        place = entry.get("data3")
+        return Suggestion(
+            **{
+                **base.__dict__,
+                "start_date": _iso_day(entry.get("data1")),
+                "end_date": _iso_day(entry.get("data2")),
+                "location": _clean(place) if isinstance(place, str) and place else None,
+            }
+        )
+    return base
+
+
+def parse_autocomplete(text: str) -> SuggestionList:
+    """Read the answer to a search for a name.
+
+    Each entry is checked like a link on a page: its kind must be one we know, and its
+    address must be that kind's own path with the same number as its ``id``. The
+    ``html`` field the site sends for its drop-down is ignored.
+
+    Args:
+        text: The response body, which should be a JSON array.
+
+    Returns:
+        The usable entries (at most ``MAX_SUGGESTIONS``, each once) and how many were
+        not usable.
+
+    Raises:
+        ProviderError: If the body is not a JSON array, so a changed answer is noticed
+            and not mistaken for "no results".
+    """
+    try:
+        data = json.loads(text)
+    except ValueError as error:
+        msg = "Comiconomicon's search did not answer in the form we expect."
+        raise ProviderError(msg) from error
+    if not isinstance(data, list):
+        msg = "Comiconomicon's search did not answer with a list."
+        raise ProviderError(msg)
+    found: dict[tuple[str, str], Suggestion] = {}
+    skipped = 0
+    for entry in data[:MAX_SUGGESTIONS]:
+        item = _suggestion(entry)
+        if item is None:
+            skipped += 1
+        else:
+            found.setdefault((item.kind, item.source_key), item)
+    return SuggestionList(
+        list(found.values()), skipped + max(0, len(data) - MAX_SUGGESTIONS)
+    )
+
+
+def _plain(text: str) -> str:
+    folded = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
+    words = re.sub(r"[^a-z0-9]+", " ", folded.lower().replace("&", " and "))
+    return " ".join(words.split())
+
+
+def match_by_name(
+    items: list[Suggestion], kind: str, name: str, *, year: int | None = None
+) -> list[Suggestion]:
+    """Pick the search results that are exactly the thing being looked for.
+
+    Names are compared whole, ignoring case, accents and punctuation. For a film or
+    series a year, if given, must agree too (a result with no year does not match).
+
+    Args:
+        items: The results of a search.
+        kind: ``guest``, ``videomedia`` or ``event``.
+        name: The name looked for.
+        year: A film or series' release year, if known.
+
+    Returns:
+        The matches: none means not found, one is the answer, and several mean it is
+        ambiguous and the caller must not guess.
+    """
+    wanted = _plain(name)
+    if not wanted:
+        return []
+    return [
+        item
+        for item in items
+        if item.kind == kind
+        and _plain(item.name) == wanted
+        and (year is None or item.year == year)
+    ]
