@@ -61,6 +61,14 @@ class IngestResult:
     merge_suggestions: int = 0
 
 
+def _record_view(source: ConventionSource, info: ConventionInfo) -> None:
+    """Keep what this source itself says, whatever the merged convention shows."""
+    source.seen_name = info.name
+    source.seen_start = info.start_date
+    source.seen_end = info.end_date
+    source.seen_venue = info.venue
+
+
 def _rank(provider: str) -> int:
     """Return how far down the trust order a provider is (0 is the most trusted)."""
     return _PRIORITY.index(provider) if provider in _PRIORITY else len(_PRIORITY)
@@ -189,6 +197,7 @@ class DiscoveryService:
             convention = await self._session.get_one(Convention, source.convention_id)
             source.source_url = info.source_url
             source.last_seen_at = now
+            _record_view(source, info)
             await self._apply_details(convention, provider, info, now)
             return convention, False, 0
         twin, doubtful = await self._find_twins(provider, info)
@@ -202,16 +211,16 @@ class DiscoveryService:
         if created:
             self._session.add(convention)
             await self._session.flush()
-        self._session.add(
-            ConventionSource(
-                convention_id=convention.id,
-                provider=provider,
-                source_key=info.source_key,
-                source_url=info.source_url,
-                first_seen_at=now,
-                last_seen_at=now,
-            )
+        new_source = ConventionSource(
+            convention_id=convention.id,
+            provider=provider,
+            source_key=info.source_key,
+            source_url=info.source_url,
+            first_seen_at=now,
+            last_seen_at=now,
         )
+        _record_view(new_source, info)
+        self._session.add(new_source)
         await self._session.flush()
         if not created:
             await self._apply_details(convention, provider, info, now)

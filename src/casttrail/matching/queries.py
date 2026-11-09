@@ -44,7 +44,7 @@ async def relevant_appearances(
     """
     cutoff = today - _GRACE
     rows = await session.execute(
-        select(Person.name, Convention, Match.kind, Match.reason)
+        select(Person.id, Person.name, Convention, Match.kind, Match.reason)
         .join(Match, Match.person_id == Person.id)
         .join(Appearance, Appearance.id == Match.appearance_id)
         .join(Convention, Convention.id == Appearance.convention_id)
@@ -63,4 +63,12 @@ async def relevant_appearances(
             Convention.id,
         )
     )
-    return [RelevantAppearance(n, c, k, r) for n, c, k, r in rows]
+    # A person at an event two sources list has two matches. Rows come soonest first
+    # and, within one event, confirmed before possible, so the first one is the surest.
+    best: dict[tuple[uuid.UUID, uuid.UUID], RelevantAppearance] = {}
+    for person_id, name, convention, kind, reason in rows:
+        best.setdefault(
+            (person_id, convention.id),
+            RelevantAppearance(name, convention, kind, reason),
+        )
+    return list(best.values())

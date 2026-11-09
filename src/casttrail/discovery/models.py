@@ -63,6 +63,12 @@ class ConventionSource(Base):
     provider: Mapped[str] = mapped_column(String(50))
     source_key: Mapped[str] = mapped_column(String(255))
     source_url: Mapped[str] = mapped_column(String(500))
+    # What this source itself says, kept apart from the merged convention so that
+    # disagreements between sources can be shown. ``None`` means it did not say.
+    seen_name: Mapped[str | None] = mapped_column(String(300))
+    seen_start: Mapped[date | None]
+    seen_end: Mapped[date | None]
+    seen_venue: Mapped[str | None] = mapped_column(String(500))
     first_seen_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utc_now)
     last_seen_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utc_now)
 
