@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
 
 import httpx2
+import structlog
 
 from casttrail import get_version
 from casttrail.providers.base import ProviderError
@@ -13,6 +14,8 @@ from casttrail.providers.rostercon import HOST, PersonPage, parse_people_sitemap
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
+
+logger = structlog.get_logger(__name__)
 
 # Rostercon starts answering 503 after about 25 requests in 30 minutes, so requests are
 # spaced well apart and a refusal is respected for a long time, never retried at once.
@@ -24,6 +27,10 @@ SITEMAP_URL = "https://www.rostercon.com/acteurs-sitemap{number}.xml"
 # The first file has no number; the rest are numbered from 2. There are 7 today.
 _MAX_SITEMAP_FILES = 20
 _INDEX_LIFETIME = timedelta(days=14)
+
+
+def _ms(started: float) -> float:
+    return round((time.perf_counter() - started) * 1000, 1)
 
 
 class RosterconUnavailableError(ProviderError):
@@ -153,6 +160,7 @@ class RosterconFetcher:
             return
         remaining = self._blocked_until - self._clock()
         if remaining > 0:
+            logger.info("rostercon_cooling_down", remaining_s=round(remaining))
             raise RosterconUnavailableError(
                 "Rostercon is being left alone for now.",
                 retry_after=timedelta(seconds=remaining),
@@ -162,18 +170,49 @@ class RosterconFetcher:
         if self._last_request is not None:
             wait = self._last_request + self._min_interval - self._clock()
             if wait > 0:
+                logger.debug("rostercon_spacing", wait_s=round(wait, 1))
                 await self._sleep(wait)
 
     async def _fetch(self, url: str) -> FetchedPage:
         self._last_request = self._clock()
+        started = time.perf_counter()
+        path = urlsplit(url).path
+        status: int | None = None
         try:
             async with self._client.stream("GET", url) as response:
+                status = response.status_code
                 self._check_status(response)
                 body = await _read_limited(response)
                 encoding = response.encoding or "utf-8"
                 etag = response.headers.get("etag")
         except httpx2.HTTPError as error:
+            logger.warning(
+                "rostercon_unreachable",
+                path=path,
+                error=type(error).__name__,
+                duration_ms=_ms(started),
+            )
             raise ProviderError("Rostercon could not be reached.") from error
+        except RosterconNotFoundError as error:
+            # Expected at the end of the sitemap, so not worth a warning.
+            logger.info("rostercon_not_found", path=path, duration_ms=_ms(started))
+            raise error
+        except ProviderError as error:
+            logger.warning(
+                "rostercon_refused",
+                path=path,
+                status=status,
+                error=str(error),
+                duration_ms=_ms(started),
+            )
+            raise
+        logger.info(
+            "rostercon_request",
+            path=path,
+            status=status,
+            bytes=len(body),
+            duration_ms=_ms(started),
+        )
         return FetchedPage(text=body.decode(encoding, errors="replace"), etag=etag)
 
     def _check_status(self, response: httpx2.Response) -> None:
@@ -192,6 +231,13 @@ class RosterconFetcher:
         asked = min(_retry_after(response) or 0.0, MAX_COOLDOWN)
         cooldown = max(backoff, asked)
         self._blocked_until = self._clock() + cooldown
+        logger.warning(
+            "rostercon_cooldown_started",
+            status=response.status_code,
+            cooldown_s=cooldown,
+            retry_after_s=asked or None,
+            refusals_in_a_row=self._refusals,
+        )
         return RosterconUnavailableError(
             f"Rostercon answered {response.status_code}.",
             retry_after=timedelta(seconds=cooldown),

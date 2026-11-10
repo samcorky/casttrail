@@ -1,6 +1,6 @@
-import logging
 from typing import TYPE_CHECKING, Protocol
 
+import structlog
 from sqlalchemy import select
 
 from casttrail.discovery.models import JobRun
@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 
     from casttrail.providers.rostercon_client import PeopleIndex, RosterconFetcher
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class Refresher(Protocol):
@@ -64,17 +64,15 @@ async def run_in_background(job: Refresher) -> None:
     Args:
         job: The refresh to run.
     """
+    structlog.contextvars.clear_contextvars()
+    structlog.contextvars.bind_contextvars(task="refresh")
     try:
-        report = await job.run()
+        await job.run()
     except Exception:
-        logger.exception("The Rostercon refresh crashed")
-        return
-    if report is None:
-        logger.info("A Rostercon refresh is already running; skipped")
-    elif report.stopped is not None:
-        logger.warning("The Rostercon refresh stopped early: %s", report.stopped)
-    else:
-        logger.info("The Rostercon refresh finished")
+        # refresh_crashed has already been logged, with its traceback, by the refresh.
+        logger.error("background_refresh_failed")
+    finally:
+        structlog.contextvars.clear_contextvars()
 
 
 async def recent_runs(session: AsyncSession, limit: int = 10) -> list[JobRun]:

@@ -1,16 +1,18 @@
 {% extends "base.html" %}
 {% block title %}Dashboard · CastTrail{% endblock %}
 {% block content %}
-<h1>Hello, {{ user.display_name }}</h1>
-<article>
-  <header>Your account</header>
-  <dl>
-    <dt>Email</dt>
-    <dd>{{ user.email }}</dd>
-    <dt>Role</dt>
-    <dd>{{ "Administrator" if user.is_admin else "User" }}</dd>
-  </dl>
-</article>
+<h1 class="mb-4">Hello, {{ user.display_name }}</h1>
+<div class="card mb-4">
+  <div class="card-header">Your account</div>
+  <div class="card-body">
+    <dl class="row mb-0">
+      <dt class="col-sm-3">Email</dt>
+      <dd class="col-sm-9">{{ user.email }}</dd>
+      <dt class="col-sm-3">Role</dt>
+      <dd class="col-sm-9 mb-0">{{ "Administrator" if user.is_admin else "User" }}</dd>
+    </dl>
+  </div>
+</div>
 {% if people or productions %}
 <p>
   You are watching {{ people }} {{ "person" if people == 1 else "people" }}

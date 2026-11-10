@@ -1,5 +1,6 @@
 from typing import Annotated
 
+import structlog
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
@@ -13,6 +14,8 @@ from casttrail.web.cookies import (
 )
 from casttrail.web.dependencies import AuthServiceDep, CurrentUserOptional, SettingsDep
 from casttrail.web.routes import templates
+
+logger = structlog.get_logger(__name__)
 
 router = APIRouter()
 
@@ -67,6 +70,13 @@ async def login(
             device_token=read_device_token(request, settings),
         )
     except SignInThrottledError as error:
+        # The address is logged, never the email or the password: either could be typed
+        # into the wrong box.
+        logger.warning(
+            "signin_throttled",
+            client=request.client.host if request.client else None,
+            retry_after_s=int(error.retry_after.total_seconds()),
+        )
         return templates.TemplateResponse(
             request,
             "login.html",
@@ -75,9 +85,17 @@ async def login(
             headers={"Retry-After": str(int(error.retry_after.total_seconds()))},
         )
     if signed_in is None:
+        logger.warning(
+            "signin_failed", client=request.client.host if request.client else None
+        )
         return templates.TemplateResponse(
             request, "login.html", {"error": INVALID_CREDENTIALS}, status_code=401
         )
+    logger.info(
+        "signin_ok",
+        user_id=str(signed_in.user.id),
+        client=request.client.host if request.client else None,
+    )
     response = RedirectResponse("/", status_code=303)
     set_session_cookie(request, response, signed_in.token, settings)
     set_device_cookie(request, response, signed_in.device_token, settings)
@@ -101,6 +119,7 @@ async def logout(
     token = read_session_token(request, settings)
     if token is not None:
         await auth.sign_out(token)
+        logger.info("signout")
     response = RedirectResponse("/login", status_code=303)
     clear_session_cookie(request, response, settings)
     return response

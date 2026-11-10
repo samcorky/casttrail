@@ -5,7 +5,6 @@ can run before the application's own engine exists and in a worker thread.
 """
 
 import contextlib
-import logging
 import os
 import re
 import sqlite3
@@ -14,12 +13,13 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import structlog
 from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from sqlalchemy.engine import make_url
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # Beside the source tree when run from a checkout; an installed copy (the Docker image)
 # says where its copy is.
@@ -62,6 +62,15 @@ def backup_folder(url: str, configured: str | None) -> Path | None:
         return Path(configured)
     file = database_file(url)
     return None if file is None else file.parent / "backups"
+
+
+def head() -> str | None:
+    """Return the newest migration the code knows.
+
+    Returns:
+        The revision id.
+    """
+    return _head()
 
 
 def _head() -> str | None:
@@ -218,6 +227,8 @@ def prune_backups(folder: Path, keep: int) -> list[str]:
     for old in daily[keep:]:
         (folder / old.name).unlink(missing_ok=True)
         removed.append(old.name)
+    if removed:
+        logger.info("backups_pruned", removed=removed, kept=keep)
     return removed
 
 

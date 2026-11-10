@@ -1,5 +1,6 @@
 from typing import Annotated
 
+import structlog
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
@@ -8,6 +9,8 @@ from casttrail.auth.throttle import SignInThrottledError
 from casttrail.web.cookies import read_session_token
 from casttrail.web.dependencies import AuthServiceDep, CurrentUser, SettingsDep
 from casttrail.web.routes import templates
+
+logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/account")
 
@@ -89,6 +92,11 @@ async def change_password(
             client_ip=request.client.host if request.client else None,
         )
     except SignInThrottledError as error:
+        logger.warning(
+            "password_change_throttled",
+            user_id=str(user.id),
+            retry_after_s=int(error.retry_after.total_seconds()),
+        )
         return _page(
             request,
             user,
@@ -97,5 +105,9 @@ async def change_password(
             headers={"Retry-After": str(int(error.retry_after.total_seconds()))},
         )
     except AccountError as error:
+        logger.warning(
+            "password_change_refused", user_id=str(user.id), reason=str(error)
+        )
         return _page(request, user, error=str(error), status_code=400)
+    logger.info("password_changed", user_id=str(user.id))
     return RedirectResponse("/account/password?done=true", status_code=303)

@@ -227,7 +227,7 @@ def test_the_guest_count_counts_only_listed_guests(
         page = client.get("/events").text
 
     row = page[page.index("Counted Con") :]
-    assert "<td>2</td>" in row[: row.index("</tr>")]
+    assert '<td class="text-end">2</td>' in row[: row.index("</tr>")]
 
 
 def test_an_empty_list_says_so(settings: Settings, database_url: str) -> None:

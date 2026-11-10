@@ -113,6 +113,8 @@ def test_the_stylesheet_the_login_page_names_is_the_one_served(
 ) -> None:
     page = anonymous.get("/login").text
 
-    assert 'href="/static/css/pico.min.css"' in page
+    assert 'href="/static/css/bootstrap.min.css"' in page
     assert 'href="/static/css/app.css"' in page
     assert 'src="/static/js/htmx.min.js"' in page
+    assert 'src="/static/js/bootstrap.bundle.min.js"' in page
+    assert 'src="/static/js/theme.js"' in page

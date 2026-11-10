@@ -1,12 +1,15 @@
 import uuid
 from typing import Annotated
 
+import structlog
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from casttrail.web.dependencies import CurrentAdmin, MatchServiceDep, MergeServiceDep
 from casttrail.web.errors import PageError
 from casttrail.web.routes import templates
+
+logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/admin/merges")
 
@@ -74,8 +77,13 @@ async def merge(
     Raises:
         PageError: A 404 if there is no such suggested pair.
     """
-    del admin  # Only checked: any administrator may merge.
     outcome = await service.merge(pair_id, keep)
+    logger.info(
+        "events_merge",
+        pair=str(pair_id),
+        keep=str(keep),
+        outcome=outcome,
+    )
     if outcome == "missing":
         raise PageError("That pair was not found.", status_code=404)
     if outcome == "same-source":
@@ -101,9 +109,9 @@ async def reject(
     Raises:
         PageError: A 404 if there is no such suggested pair.
     """
-    del admin
     if not await service.reject(pair_id):
         raise PageError("That pair was not found.", status_code=404)
+    logger.info("events_marked_different", pair=str(pair_id))
     return _done("rejected")
 
 
@@ -124,7 +132,7 @@ async def reconsider(
     Raises:
         PageError: A 404 if there is no such rejected pair.
     """
-    del admin
     if not await service.reconsider(pair_id):
         raise PageError("That pair was not found.", status_code=404)
+    logger.info("events_pair_reconsidered", pair=str(pair_id))
     return _done("reconsidered")

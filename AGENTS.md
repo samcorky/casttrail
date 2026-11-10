@@ -30,10 +30,12 @@ All via `uv run poe <task>`:
 - No live network access in tests. Use saved fixtures.
 - Control time in tests with the `time-machine` library. No helper clock classes, and do not add a `now` parameter just to make time testable.
 - Never await an outside service (HTTP, a subprocess, a long sleep) while a session has a transaction open. Every transaction takes SQLite's single write lock when it begins, so one slow call locks everyone out ("database is locked"). Read what you need, commit or close, do the outside work, then begin a new transaction to write.
+- Log with `structlog.get_logger(__name__)`: a snake_case event name plus key-values, never a sentence or an f-string. Never log a password, token, cookie, query string or request body (the `redact` processor is a net, not permission). `user_id`, `request_id` and `job_id` come from contextvars; do not read ORM attributes in a log call after a rollback. Tests read events with `structlog.testing.capture_logs()`.
 - Startup must never crash the app: a problem becomes a plain 503 page and a degraded `/health`, with detail only in the log (see `docs/operations.md`).
 - Providers return data and never touch the database. Core owns persistence, identity, matching and notifications.
 - Imported data is untrusted. A missing listing is never a cancellation. Manual identity decisions are never overwritten by a sync.
 - Every personal query filters by user. Return 404 for missing or not-owned resources.
+- Templates use Bootstrap 5.3 classes (vendored in `web/static`, no CDN). Keep `app.css` small. A table that matters on a phone shows its secondary columns under the first one below `md` (see `events.html`), and a data table sits in `.table-responsive`.
 - Keep it simple. No speculative abstractions, buses or extra layers. Implement only the requested work package chunk.
 - Each schema change is an Alembic migration with a fresh-database and an upgrade test.
 

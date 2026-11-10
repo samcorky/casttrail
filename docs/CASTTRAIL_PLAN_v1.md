@@ -120,7 +120,7 @@ Each WP ends with a runnable app, a UI-visible outcome, a migration test (fresh 
 | WP | Deliverable | Done when |
 |---|---|---|
 | **0 Spike (about 2 d)** | Review ToS and robots for the candidate sites. Save fixtures. Check stable IDs, cancellation semantics, and whether names carry TMDB or IMDb links. Pick **two** sources, one of which should have richer attendance data. Write the outcome in `docs/decisions.md`. | At least one source is confirmed permitted and parseable. If none is, stop and replan before WP-1. |
-| **1 Shell + auth** | `uv` project, FastAPI, Jinja2 + Pico + local assets, Alembic, Poe tasks (`check`), CI. Admin bootstrap from env, login and logout, CSRF, private dashboard, user admin. | Two users cannot see each other's pages. Health page shows version and DB revision. |
+| **1 Shell + auth** | `uv` project, FastAPI, Jinja2 + Bootstrap 5.3 + local assets, Alembic, Poe tasks (`check`), CI. Admin bootstrap from env, login and logout, CSRF, private dashboard, user admin. | Two users cannot see each other's pages. Health page shows version and DB revision. |
 | **2 Watchlist** | TMDB search (people, films, series), credits, watch and unwatch, curated franchise watches. | Watch *Warehouse 13* and James Bond, restart, and they persist. |
 | **3 Event browser** | Provider 1, discovery service, scheduled and manual refresh, source health, UK events and guests with provenance. | Refreshing twice makes no duplicates. A parse failure keeps old data and marks the source degraded. |
 | **4 Relevant + identity** | Matching, "my relevant appearances" page, *Possible* tier, admin review with bulk confirm, link, unlink and reject. | A correction survives three re-syncs. Unresolved guests never alert. |
@@ -199,7 +199,7 @@ Entry-point plugins, JSON API, digests, Bond ranking and bipartite assignment, c
 Revisit these only after WP-8, each as its own slice.
 
 **Planned, from the build.**
-- *Bootstrap 5.3 instead of Pico* (decided by the owner; issue #50). Bootstrap 6 is an alpha (`6.0.0-alpha.1`), so 5.3 is the stable choice. It touches about 25 templates and the tests that check markup, so it is done between chunks, not mixed into one.
+- *Bootstrap 5.3 instead of Pico:* **done** (A5, issue #50). Vendored 5.3.8, not the 6.0 alpha.
 - *Catch-up refresh at startup.* If the refresh is on and the last success is over a day old, run it after the app is up, as the startup backup does. Preferred over an APScheduler SQLAlchemy jobstore, whose pickled jobs cannot carry our live objects and which needs a table outside our migrations.
 - *Restore from the admin page and an off-machine copy of backups.* Restore is a documented manual step for now.
 - *Building and publishing the Docker image in CI.*
@@ -292,7 +292,7 @@ Still open:
 - [x] A2 Startup: automatic database update with a safety copy first, never crash (a plain 503 page and a degraded `/health` instead), and backups: daily, at startup if the newest is old, on demand from the admin Source health page (#55) 🧪
 - [x] A3 Docker image, Compose file, health check and `poe docker-*` tasks; running on the owner's PC behind `tailscale serve` (#56) 🧪
 - [x] A4 Logo: a wavy trail tucked behind the star, an icon generator (`poe generate-icons`) and a test that the committed icons match the logo (PR #59, open) 🧪
-- [ ] A5 Move the UI from Pico to Bootstrap 5.3 (issue #50) 👁️ DEMO
+- [x] A5 Move the UI from Pico to Bootstrap 5.3 (issue #50): one-row nav with an Admin dropdown, tables that fit a phone, dark mode 👁️ DEMO
 - [ ] A6 Startup catch-up for the daily refresh 🧪
 - [ ] A7 Move the older tests from injected clocks and `Clock` helpers to `time-machine` 🧪
 - [ ] A8 GitHub issue templates (issue #51)
@@ -337,7 +337,7 @@ CastTrail runs in Docker on the owner's PC, reached over Tailscale at `https://s
 - **Ops:** `.env`, automatic update with a safety copy, never-crash startup, backups, Docker, poe docker tasks, icon generator.
 
 ### Next
-1. **A5 Bootstrap 5.3**, then **5.5b to 5.5d** (fetch Comiconomicon: a polite fetcher and cached lookup, a refresh for watched people, then films and series), then **WP-6 ntfy** together with franchise and Bond watches (2.5), then WP-7 and the rest of WP-8.
+1. **5.5b to 5.5d** (fetch Comiconomicon: a polite fetcher and cached lookup, a refresh for watched people, then films and series), then **WP-6 ntfy** together with franchise and Bond watches (2.5), then WP-7 and the rest of WP-8.
 2. Owner actions: merge #59, #57, #58 (bottom up); put a fresh TMDB key in `.env` (the one pasted into chat should be rotated); set Docker Desktop to start with Windows; copy `./backups` somewhere off the machine now and then.
 
 ### Decisions made since the plan was written
@@ -353,7 +353,7 @@ CastTrail runs in Docker on the owner's PC, reached over Tailscale at `https://s
 - Docker: one container, database in a named volume (SQLite WAL is unreliable on a Windows bind mount), backups to a plain folder, published on `127.0.0.1:8002`.
 - Startup: update the database automatically with a safety copy first (and not at all if the copy fails); a startup problem gives a plain 503 page and a degraded `/health`, not a crash.
 - APScheduler stays in memory; a startup catch-up is preferred to a jobstore.
-- Tests use `time-machine`. The UI moves to Bootstrap 5.3, not the 6.0 alpha.
+- Tests use `time-machine`. The UI uses Bootstrap 5.3 (vendored, not the 6.0 alpha), replacing Pico.
 
 ### Open items and reminders
 - `AuthService.forget_devices` is called on password change and when an admin disables an account. Any later password reset or session revocation must call it too.

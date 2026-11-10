@@ -1,48 +1,48 @@
 {% extends "base.html" %}
-{% from "_cards.html" import card, unwatch_form with context %}
+{% from "_cards.html" import card, unwatch_form, grid_classes with context %}
 {% block title %}Watchlist · CastTrail{% endblock %}
 {% block content %}
-<h1>Watchlist</h1>
+<h1 class="mb-4">Watchlist</h1>
 {% if not (people or films or series) %}
 <p>You are not watching anything yet. <a href="/search">Search</a> for a person, film or series to start.</p>
 {% endif %}
 {% if people %}
-<section aria-labelledby="people-heading">
-  <h2 id="people-heading">People</h2>
-  <ul class="results">
+<section aria-labelledby="people-heading" class="mb-4">
+  <h2 id="people-heading" class="h4">People</h2>
+  <div class="{{ grid_classes() }}">
     {% for watch in people %}
     {% call card(watch.person.profile_path, watch.person.name, watch.person.known_for_department) %}
       {{ unwatch_form(watch.id, "watchlist") }}
     {% endcall %}
     {% endfor %}
-  </ul>
+  </div>
 </section>
 {% endif %}
 {% if films %}
-<section aria-labelledby="films-heading">
-  <h2 id="films-heading">Films</h2>
-  <ul class="results">
+<section aria-labelledby="films-heading" class="mb-4">
+  <h2 id="films-heading" class="h4">Films</h2>
+  <div class="{{ grid_classes() }}">
     {% for watch in films %}
     {% call card(watch.production.poster_path, watch.production.title, watch.production.release_year) %}
       {{ unwatch_form(watch.id, "watchlist") }}
     {% endcall %}
     {% endfor %}
-  </ul>
+  </div>
 </section>
 {% endif %}
 {% if series %}
-<section aria-labelledby="series-heading">
-  <h2 id="series-heading">Series</h2>
-  <ul class="results">
+<section aria-labelledby="series-heading" class="mb-4">
+  <h2 id="series-heading" class="h4">Series</h2>
+  <div class="{{ grid_classes() }}">
     {% for watch in series %}
     {% call card(watch.production.poster_path, watch.production.title, watch.production.release_year) %}
       {{ unwatch_form(watch.id, "watchlist") }}
     {% endcall %}
     {% endfor %}
-  </ul>
+  </div>
 </section>
 {% endif %}
-<footer>
-  <small>This product uses the TMDB API but is not endorsed or certified by TMDB.</small>
+<footer class="mt-4">
+  <small class="text-body-secondary">This product uses the TMDB API but is not endorsed or certified by TMDB.</small>
 </footer>
 {% endblock %}

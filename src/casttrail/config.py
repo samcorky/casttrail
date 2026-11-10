@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     backup_keep: int = Field(default=14, ge=1, le=365)
     backup_hour: int = Field(default=3, ge=0, le=23)
 
+    # How much the app says. Lines are JSON when nothing is watching the terminal (a
+    # container) and a coloured console otherwise, unless forced.
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+    log_format: Literal["auto", "console", "json"] = "auto"
+
     session_ttl_hours: int = 24 * 30
     cookie_name: str = "casttrail-session"
     device_cookie_name: str = "casttrail-device"

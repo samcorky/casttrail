@@ -2,31 +2,39 @@
 {% from "_event_bits.html" import dates, place, status %}
 {% block title %}My appearances · CastTrail{% endblock %}
 {% block content %}
-<h1>My relevant appearances</h1>
-<p>
+<h1 class="mb-3">My relevant appearances</h1>
+<p class="text-body-secondary">
   Where the people you watch are listed as guests. <strong>Confirmed</strong> means a
   person linked the guest to them. <strong>Possible</strong> means only the name
   matched, so it may be someone else with the same name.
 </p>
 {% if rows %}
-<table>
-  <thead>
-    <tr><th>Person</th><th>Event</th><th>When</th><th>Where</th><th>Match</th><th>Why</th></tr>
-  </thead>
-  <tbody>
-    {% for row in rows %}
-    <tr>
-      <td>{{ row.person_name }}</td>
-      <td><a href="/events/{{ row.convention.id }}">{{ row.convention.name }}</a>
-        {% if row.convention.status in ("cancelled", "postponed") %}({{ status(row.convention.status) }}){% endif %}</td>
-      <td>{{ dates(row.convention) }}</td>
-      <td>{{ place(row.convention) }}</td>
-      <td>{{ "Confirmed" if row.kind == "confirmed" else "Possible" }}</td>
-      <td>{{ row.reason }}</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+<div class="table-responsive">
+  <table class="table table-hover align-middle">
+    <thead>
+      <tr><th>Person</th><th>Event</th><th class="d-none d-md-table-cell">When</th><th class="d-none d-md-table-cell">Where</th><th>Match</th><th class="d-none d-md-table-cell">Why</th></tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>{{ row.person_name }}</td>
+        <td><a href="/events/{{ row.convention.id }}">{{ row.convention.name }}</a>
+          {% if row.convention.status in ("cancelled", "postponed") %}({{ status(row.convention.status) }}){% endif %}
+          <div class="d-md-none small text-body-secondary">{{ dates(row.convention) }} · {{ place(row.convention) }}</div>
+        </td>
+        <td class="d-none d-md-table-cell">{{ dates(row.convention) }}</td>
+        <td class="d-none d-md-table-cell">{{ place(row.convention) }}</td>
+        <td>
+          {% if row.kind == "confirmed" %}<span class="badge text-bg-success">Confirmed</span>
+          {% else %}<span class="badge text-bg-secondary">Possible</span>{% endif %}
+          <div class="d-md-none small text-body-secondary">{{ row.reason }}</div>
+        </td>
+        <td class="d-none d-md-table-cell">{{ row.reason }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
 {% else %}
 <p>No appearances found yet. Watch some <a href="/search">people</a>
   {% if user.is_admin %}and run a <a href="/admin/refresh">refresh</a>{% else %}and wait for the next refresh{% endif %}.</p>
