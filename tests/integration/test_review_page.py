@@ -451,15 +451,24 @@ def test_a_search_shows_at_most_twenty_guests(
     async def add_many() -> None:
         engine = create_engine(database_url)
         async with create_session_factory(engine)() as session:
-            session.add_all(
-                ExternalIdentity(
+            convention = await session.scalar(select(Convention))
+            assert convention is not None
+            for n in range(25):
+                identity = ExternalIdentity(
                     id=uuid.uuid4(),
                     provider="rostercon",
                     external_id=f"bulk-{n}",
                     display_name=f"Bulk Guest {n:02d}",
                 )
-                for n in range(25)
-            )
+                session.add(identity)
+                await session.flush()
+                session.add(
+                    Appearance(
+                        id=uuid.uuid4(),
+                        convention_id=convention.id,
+                        external_identity_id=identity.id,
+                    )
+                )
             await session.commit()
         await engine.dispose()
 
@@ -502,3 +511,99 @@ def test_tmdb_identities_are_never_listed_as_guests(
     assert "No guest has that name." in page
     linked = _admin(client).get("/admin/review").text
     assert "No guests are linked." in linked
+
+
+async def _person_ids(database_url: str) -> tuple[uuid.UUID, uuid.UUID]:
+    """A person's own TMDB and IMDb identities, as watching a person records them."""
+    engine = create_engine(database_url)
+    async with create_session_factory(engine)() as session:
+        person = await session.scalar(
+            select(Person).where(Person.name == "Paul McGann")
+        )
+        assert person is not None
+        ids = []
+        for provider, key in (("tmdb", "1"), ("imdb", "nm0565858")):
+            found = await session.scalar(
+                select(ExternalIdentity).where(
+                    ExternalIdentity.provider == provider,
+                    ExternalIdentity.external_id == key,
+                )
+            )
+            if found is None:
+                found = ExternalIdentity(
+                    id=uuid.uuid4(),
+                    provider=provider,
+                    external_id=key,
+                    person_id=person.id,
+                )
+                session.add(found)
+            else:
+                found.person_id = person.id
+            ids.append(found.id)
+        await session.commit()
+    await engine.dispose()
+    return ids[0], ids[1]
+
+
+def test_a_persons_own_imdb_and_tmdb_ids_are_never_listed_as_guests(
+    client: TestClient, database_url: str
+) -> None:
+    asyncio.run(_person_ids(database_url))
+
+    review = _admin(client).get("/admin/review").text
+    search = client.get("/admin/review?q=nm0565858").text
+
+    assert "<td>nm0565858</td>" not in review
+    assert "No guests are linked." in review
+    assert "<td>nm0565858</td>" not in search
+    assert "No guest has that name." in search
+
+
+def test_a_persons_own_ids_cannot_be_unlinked_confirmed_or_rejected(
+    client: TestClient, facts: Facts, database_url: str
+) -> None:
+    tmdb_id, imdb_id = asyncio.run(_person_ids(database_url))
+    _admin(client)
+
+    for identity in (tmdb_id, imdb_id):
+        assert (
+            client.post(
+                "/admin/review/unlink", data={"identity_id": str(identity)}
+            ).status_code
+            == 404
+        )
+        assert (
+            client.post(
+                "/admin/review/confirm",
+                data={"identity_id": str(identity), "person_id": str(facts.sean)},
+            ).status_code
+            == 404
+        )
+        assert (
+            client.post(
+                "/admin/review/reject",
+                data={"identity_id": str(identity), "person_id": str(facts.sean)},
+            ).status_code
+            == 404
+        )
+
+    async def still_linked() -> list[uuid.UUID | None]:
+        engine = create_engine(database_url)
+        async with create_session_factory(engine)() as session:
+            rows = [
+                (await session.get(ExternalIdentity, i)).person_id  # type: ignore[union-attr]
+                for i in (tmdb_id, imdb_id)
+            ]
+        await engine.dispose()
+        return rows
+
+    assert asyncio.run(still_linked()) == [facts.paul, facts.paul]
+    assert asyncio.run(_decisions_count(database_url)) == 0
+
+
+async def _decisions_count(database_url: str) -> int:
+    engine = create_engine(database_url)
+    async with create_session_factory(engine)() as session:
+        count = len(list(await session.scalars(select(IdentityDecision.id))))
+    await engine.dispose()
+    return count

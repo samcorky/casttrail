@@ -357,6 +357,13 @@ The app is meant to run in Docker. Files: `Dockerfile`, `compose.yaml`, `.docker
 - **Rule for new code:** never await an outside service (HTTP, a subprocess, a long sleep) while a session has a transaction open. Read what is needed, commit or close, do the outside work, then open a new transaction to write.
 - **Not changed, but noted:** reads also take the write lock (every transaction is `BEGIN IMMEDIATE`). That is fine while transactions are short; if the app grows, a read-only connection with a plain `BEGIN` would remove the contention altogether.
 
+## Review guests listed a person's own IMDb ids (2026-11-09)
+
+- **Found by the project owner** on the live site: the "Linked guests" list showed `nm0000408` (Jonathan Frakes) and `nm0209496` (John de Lancie). Those are IMDb ids that watching a person records, not convention guests.
+- **Cause:** the lists excluded only provider `tmdb`; watching a person also records an `imdb` identity, and both are rows in the same table as guests. An **Unlink** on one would have removed the person's IMDb link.
+- **Fix:** a guest is now defined as an identity that appears at a convention (it has an appearance), not by provider name, so no future id type can leak in. The list, the search, and every decision (confirm, reject, unlink) use that definition; a decision on anything else is refused (404) and changes nothing, even if the request is crafted by hand.
+- **Tests:** a person's own TMDB and IMDb ids are never listed or found, and cannot be unlinked, confirmed or rejected; with the guard removed each of those fails. Mutation checks cover the two lists and the two guards.
+- **Checked live:** the two identities are still linked to their people (nothing was unlinked), see the commit notes.
 ## Logging with structlog (2026-11-09)
 
 - **Why:** a refresh stopped early with only "Rostercon could not be read" and nothing in the log said why. The app logged almost nothing, as free text.

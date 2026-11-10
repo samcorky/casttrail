@@ -97,7 +97,7 @@ class DecisionService:
         Returns:
             ``False`` if the guest does not exist.
         """
-        identity = await self._session.get(ExternalIdentity, identity_id)
+        identity = await self._guest(identity_id)
         if identity is None:
             return False
         await self._session.execute(
@@ -158,10 +158,25 @@ class DecisionService:
                 rejected.add(person_id)
         return linked, frozenset(rejected)
 
+    async def _guest(self, identity_id: uuid.UUID) -> ExternalIdentity | None:
+        """Find a convention guest by id.
+
+        Anything that never appears at a convention (such as a person's own TMDB or
+        IMDb id) is refused, so a decision can never reach it.
+        """
+        listed = await self._session.scalar(
+            select(Appearance.id)
+            .where(Appearance.external_identity_id == identity_id)
+            .limit(1)
+        )
+        if listed is None:
+            return None
+        return await self._session.get(ExternalIdentity, identity_id)
+
     async def _both(
         self, identity_id: uuid.UUID, person_id: uuid.UUID
     ) -> ExternalIdentity | None:
-        identity = await self._session.get(ExternalIdentity, identity_id)
+        identity = await self._guest(identity_id)
         if identity is None or await self._session.get(Person, person_id) is None:
             return None
         return identity

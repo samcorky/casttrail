@@ -37,6 +37,14 @@ class GuestRow:
     person_name: str | None
 
 
+# A guest is an identity that appears at a convention. A person's own TMDB and IMDb
+# ids are identities too, but they are not guests and must never be listed here.
+IS_GUEST = (
+    select(Appearance.id)
+    .where(Appearance.external_identity_id == ExternalIdentity.id)
+    .exists()
+)
+
 # The name to show for a guest: the source's name, or its key if it gave none.
 SHOWN = func.coalesce(ExternalIdentity.display_name, ExternalIdentity.external_id)
 
@@ -80,7 +88,7 @@ async def linked_guests(session: AsyncSession) -> list[GuestRow]:
     rows = await session.execute(
         select(ExternalIdentity.id, SHOWN, Person.id, Person.name)
         .join(Person, Person.id == ExternalIdentity.person_id)
-        .where(ExternalIdentity.provider != "tmdb")
+        .where(IS_GUEST)
         .order_by(func.lower(SHOWN), ExternalIdentity.id)
     )
     return [GuestRow(i, str(g), p, n) for i, g, p, n in rows]
@@ -104,7 +112,7 @@ async def find_guests(session: AsyncSession, text: str) -> list[GuestRow]:
         select(ExternalIdentity.id, SHOWN, Person.id, Person.name)
         .outerjoin(Person, Person.id == ExternalIdentity.person_id)
         .where(
-            ExternalIdentity.provider != "tmdb",
+            IS_GUEST,
             SHOWN.ilike(f"%{escaped}%", escape="\\"),
         )
         .order_by(func.lower(SHOWN), ExternalIdentity.id)
