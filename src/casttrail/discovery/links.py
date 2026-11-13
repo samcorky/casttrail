@@ -1,6 +1,6 @@
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 import structlog
@@ -16,6 +16,12 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = structlog.get_logger(__name__)
+
+
+# A page found by name is trusted for this long before the name is looked up again.
+# The lookup also asks whether a second person has the name, which can change, so a
+# page is not trusted for ever. A page set by hand is trusted until it is removed.
+RECHECK_AFTER = timedelta(days=30)
 
 
 class InvalidLinkError(ValueError):
@@ -40,6 +46,14 @@ class RosterconLink:
     slug: str | None
     url: str | None
     looked_up_at: datetime | None
+
+
+@dataclass(frozen=True)
+class KnownPage:
+    """A person's Rostercon page that need not be looked up by name."""
+
+    page: PersonPage
+    manual: bool
 
 
 class RosterconLinks:
@@ -76,6 +90,29 @@ class RosterconLinks:
         )
         return [_link(person_id, name, lookup) for person_id, name, lookup in rows]
 
+    async def known(self, person_id: uuid.UUID) -> KnownPage | None:
+        """Get a person's page if it is known well enough not to look the name up.
+
+        A page set by hand is always known. A page a refresh found by name is known for
+        ``RECHECK_AFTER``. A person who was not found, or has several pages, is never
+        known: they are looked up again each time.
+
+        Args:
+            person_id: The person.
+
+        Returns:
+            The page, or ``None`` if the name must be looked up.
+        """
+        lookup = await self._stored(person_id)
+        if lookup is None or lookup.outcome != "found":
+            return None
+        if not lookup.manual and utc_now() - lookup.looked_up_at >= RECHECK_AFTER:
+            return None
+        assert lookup.source_key is not None
+        assert lookup.source_url is not None
+        page = PersonPage(slug=lookup.source_key, url=lookup.source_url)
+        return KnownPage(page, lookup.manual)
+
     async def manual(self, person_id: uuid.UUID) -> PersonPage | None:
         """Get the page a person set by hand for someone.
 
@@ -85,12 +122,8 @@ class RosterconLinks:
         Returns:
             The page, or ``None`` if nobody set one.
         """
-        lookup = await self._stored(person_id)
-        if lookup is None or not lookup.manual:
-            return None
-        assert lookup.source_key is not None
-        assert lookup.source_url is not None
-        return PersonPage(slug=lookup.source_key, url=lookup.source_url)
+        known = await self.known(person_id)
+        return known.page if known is not None and known.manual else None
 
     async def link(self, person_id: uuid.UUID, text: str) -> PersonPage:
         """Set a person's Rostercon page by hand, replacing any earlier answer.

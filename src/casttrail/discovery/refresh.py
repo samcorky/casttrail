@@ -1,3 +1,4 @@
+import asyncio
 import json
 import time
 from dataclasses import asdict, dataclass
@@ -10,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 
 from casttrail.catalogue.models import Person
 from casttrail.db import utc_now
-from casttrail.discovery.links import RosterconLinks
+from casttrail.discovery.links import KnownPage, RosterconLinks
 from casttrail.discovery.models import JobRun
 from casttrail.discovery.service import DiscoveryService
 from casttrail.matching.service import MatchService
@@ -18,13 +19,13 @@ from casttrail.providers.base import ProviderError
 from casttrail.providers.rostercon import (
     PROVIDER_ID,
     ListedEvent,
-    PersonPage,
     parse_all_events_link,
     parse_event_page,
     parse_event_rows,
 )
 from casttrail.providers.rostercon_client import (
     FoundPerson,
+    RosterconNotFoundError,
     RosterconUnavailableError,
     find_people,
 )
@@ -70,6 +71,10 @@ class RefreshReport:
     matches_removed: int = 0
     # Why the run stopped early, if it did.
     stopped: str | None = None
+
+
+class _PageMoved(Exception):  # noqa: N818  (a signal inside this module, not an error)
+    """A page found by name earlier is gone, so the name must be looked up again."""
 
 
 class RosterconRefresh:
@@ -127,6 +132,13 @@ class RosterconRefresh:
                 reason="cooldown",
                 retry_after_s=wait.total_seconds() if wait else None,
             )
+        except asyncio.CancelledError:
+            # The app is stopping (a restart, or a new image): not a fault in the run.
+            await self._session.rollback()
+            report.stopped = "Interrupted: the app stopped"
+            logger.warning("refresh_interrupted")
+            await self._finish(job_id, report)
+            raise
         except BaseException:
             await self._session.rollback()
             report.stopped = "The refresh crashed"
@@ -215,18 +227,54 @@ class RosterconRefresh:
     async def _find(
         self, person_id: uuid.UUID, name: str, report: RefreshReport
     ) -> FoundPerson | None:
-        """Get the person's page: the one linked by hand, else the one their name has.
+        """Get the person's page: one already known, else the one their name has.
 
-        A page linked by hand is used as it is and never guessed around; a name is
-        looked up only when nobody has linked one. What the name lookup finds is
-        remembered, so the admin can see who could not be placed.
+        A page set by hand is used as it is and never guessed around. A page found by
+        name earlier is asked for directly, which is one request instead of the four a
+        lookup costs; only if it has gone is the name looked up again. What a name
+        lookup finds is remembered, so the admin can see who could not be placed.
         """
         links = RosterconLinks(self._session)
-        linked = await links.manual(person_id)
+        known = await links.known(person_id)
         # Reading began a transaction; release the write lock before the fetching.
         await self._session.commit()
-        if linked is not None:
-            return await self._fetch_linked(name, linked, report)
+        if known is not None:
+            try:
+                return await self._use_known(name, known, report)
+            except _PageMoved:
+                logger.info("person_page_gone", person=name, slug=known.page.slug)
+        return await self._find_by_name(links, person_id, name, report)
+
+    async def _use_known(
+        self, name: str, known: KnownPage, report: RefreshReport
+    ) -> FoundPerson | None:
+        """Fetch a page already known. Raises ``_PageMoved`` if it is gone."""
+        try:
+            page = await self._fetcher.get(known.page.url)
+        except RosterconUnavailableError:
+            raise
+        except ProviderError as error:
+            if isinstance(error, RosterconNotFoundError) and not known.manual:
+                raise _PageMoved from error
+            report.people_failed += 1
+            logger.warning(
+                "person_link_failed",
+                person=name,
+                slug=known.page.slug,
+                manual=known.manual,
+                error=str(error),
+            )
+            return None
+        logger.debug("person_page_reused", person=name, slug=known.page.slug)
+        return FoundPerson(known.page, page.text)
+
+    async def _find_by_name(
+        self,
+        links: RosterconLinks,
+        person_id: uuid.UUID,
+        name: str,
+        report: RefreshReport,
+    ) -> FoundPerson | None:
         try:
             matches = await find_people(self._fetcher, name)
         except RosterconUnavailableError:
@@ -248,21 +296,6 @@ class RosterconRefresh:
             return None
         await links.remember(person_id, "found", matches[0].page)
         return matches[0]
-
-    async def _fetch_linked(
-        self, name: str, linked: PersonPage, report: RefreshReport
-    ) -> FoundPerson | None:
-        try:
-            page = await self._fetcher.get(linked.url)
-        except RosterconUnavailableError:
-            raise
-        except ProviderError as error:
-            report.people_failed += 1
-            logger.warning(
-                "person_link_failed", person=name, slug=linked.slug, error=str(error)
-            )
-            return None
-        return FoundPerson(linked, page.text)
 
     async def _collect(
         self,
