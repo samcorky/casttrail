@@ -6,13 +6,11 @@ import httpx2
 import pytest
 
 from casttrail.providers.base import ProviderError
+from casttrail.providers.polite import MAX_BODY_BYTES, MAX_COOLDOWN, create_client
 from casttrail.providers.rostercon_client import (
-    MAX_BODY_BYTES,
-    MAX_COOLDOWN,
     RosterconFetcher,
     RosterconNotFoundError,
     RosterconUnavailableError,
-    create_client,
     find_people,
 )
 

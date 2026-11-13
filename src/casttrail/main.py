@@ -17,10 +17,8 @@ from casttrail.config import Settings
 from casttrail.db import create_engine, create_session_factory
 from casttrail.discovery.schedule import RefreshJob, run_in_background
 from casttrail.logging_config import configure_logging
-from casttrail.providers.rostercon_client import (
-    RosterconFetcher,
-    create_client as create_rostercon_client,
-)
+from casttrail.providers.polite import create_client as create_scraping_client
+from casttrail.providers.rostercon_client import RosterconFetcher
 from casttrail.providers.tmdb import TmdbProvider, create_client
 from casttrail.startup import (
     ADMIN_WARNING,
@@ -185,7 +183,7 @@ def _start_providers(
         opened.append(tmdb_client)
         app.state.metadata = TmdbProvider(tmdb_client)
     if refresher is None:
-        rostercon_http = create_rostercon_client()
+        rostercon_http = create_scraping_client()
         opened.append(rostercon_http)
         fetcher = RosterconFetcher(rostercon_http)
         app.state.refresher = RefreshJob(app.state.session_factory, fetcher)

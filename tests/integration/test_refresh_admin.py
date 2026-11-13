@@ -23,7 +23,8 @@ from casttrail.discovery.models import JobRun
 from casttrail.discovery.refresh import RefreshReport
 from casttrail.discovery.schedule import RefreshJob, recent_runs, run_in_background
 from casttrail.main import _start_scheduler, create_app
-from casttrail.providers.rostercon_client import RosterconFetcher, create_client
+from casttrail.providers.polite import create_client
+from casttrail.providers.rostercon_client import RosterconFetcher
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
