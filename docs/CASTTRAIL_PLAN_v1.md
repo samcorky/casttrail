@@ -283,7 +283,7 @@ Still open:
 - [x] ⛔ GATE: the same event from both fixtures shows once with two sources
 - [ ] 5.5 Use Comiconomicon for real (added after the gate: nothing fetched it yet). The owner chose its search box, `/xhr/indexautocomplete.php`, to turn names into its ids (see `docs/decisions.md`).
   - [x] 5.5a Parse the search answers and match a name exactly 🧪
-  - [ ] 5.5b Polite fetcher for Comiconomicon and a cached lookup for watched people 🗄️ 🧪
+  - [x] 5.5b Polite fetcher for Comiconomicon (shared with Rostercon in `providers/polite.py`) and a cached lookup for watched people (`source_lookups`) 🗄️ 🧪
   - [ ] 5.5c Refresh from Comiconomicon for watched people (guest pages, then event pages), as a scheduled job and a button 🧪
   - [ ] 5.5d Watched films and series through their film pages, and health for the second source 🧪
 
