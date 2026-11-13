@@ -445,3 +445,11 @@ The app is meant to run in Docker. Files: `Dockerfile`, `compose.yaml`, `.docker
 - **One button, one timer, separate sources.** `RefreshAll` runs Rostercon, then Comiconomicon. Each is its own run (`rostercon-refresh`, `comiconomicon-refresh`), with its own lock, spacing and cooldown. If Rostercon asks us to wait, or even crashes, Comiconomicon still runs (a crash is raised afterwards so it is logged); a Rostercon run still in progress does not block Comiconomicon; stopping the app stops both. Tests run the real refreshes against a refusing and a crashing Rostercon.
 - **The daily timer** job id is `refresh` (it was `rostercon-refresh`). The **Refresh** page lists runs of both sources with a Source column.
 - **Not done:** Comiconomicon's health on the Source health page (plan 5.5d, with watched films and series). Every event on a guest's page is fetched, up to the 60 pages a run allows, soonest first; a UK-only filter is not safe because the site gives a country only when the location line ends with one (see WP-5.1). A cut-off run still starts again from the first person (plan A13).
+
+## A15: source links on the review page (2026-11-13)
+
+- **Why (project owner):** a reviewer confirming that a guest is a watched person has to see the guest on the source, not just a name and an id.
+- **What:** each row on **Review guests** (waiting, linked and search results) links the guest's id to its page: `https://www.rostercon.com/en/people/<name>` or `https://comiconomicon.com/guest/<number>`. The links open in a new tab with `noopener noreferrer`.
+- **The address is built, not stored.** It is made from the source and the guest's key (`page_url_for`, which asks that source's own builder: `person_url` for Rostercon, `guest_url` for Comiconomicon), and only when the key is a plain one (a lower-case name with hyphens, or a number of up to 9 ASCII digits). A key that is not plain, or a source we do not link to (TMDB, IMDb), is shown as text with no link, so imported data can never put an address on the page.
+- **Checked against the live site (2026-11-13, two single requests, honest user agent):** `comiconomicon.com/guest/518` and `/guest/518/Andrew_Jackson` both answer 200, so the number alone is enough. Rostercon's `/en/people/<name>` is the form the refresh already fetches.
+
