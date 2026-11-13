@@ -396,4 +396,3 @@ The app is meant to run in Docker. Files: `Dockerfile`, `compose.yaml`, `.docker
 - **Failure handling:** a refusal (429/503) still stops the run and starts the cooldown. Any other error while looking up one person (a 500, a timeout) counts that person as failed and the run goes on; before, one bad sitemap file ended the run.
 - **Removed:** `PeopleIndex`, `parse_people_sitemap`, `match_people` and the sitemap fixture. Nothing else used them.
 - **Not changed:** an existing page that Rostercon renames or moves is, as before, "not found" until it is found under its new name; a missing page is never taken to mean anything else.
-
