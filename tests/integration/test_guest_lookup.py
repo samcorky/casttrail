@@ -1,4 +1,6 @@
 import json
+import sqlite3
+from contextlib import closing
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -308,3 +310,70 @@ async def test_a_lookup_logs_its_outcome_and_whether_it_came_from_the_cache(
     ]
     assert all(e["person_id"] == str(person_id) for e in lookups)
     assert "Andrew" not in json.dumps(events, default=str)
+
+
+# --- a link set by a person ---------------------------------------------------------
+
+
+async def _manual_link(session: AsyncSession, person_id: uuid.UUID) -> None:
+    session.add(
+        SourceLookup(
+            provider="comiconomicon",
+            person_id=person_id,
+            outcome="found",
+            source_key="777",
+            source_url="https://comiconomicon.com/guest/777/Andy",
+            manual=True,
+            looked_up_at=START,
+        )
+    )
+    await session.commit()
+
+
+async def test_a_link_set_by_a_person_is_used_and_never_goes_stale(
+    db_session: AsyncSession,
+    site: FakeComiconomicon,
+    time_machine: TimeMachineFixture,
+) -> None:
+    person_id = await _person(db_session)
+    await _manual_link(db_session, person_id)
+    time_machine.move_to(START + timedelta(days=5000))
+
+    entry = await site.lookup().find(person_id, "Andrew Jackson")
+
+    assert (entry.source_key, entry.manual) == ("777", True)
+    assert site.requests == []
+
+
+async def test_a_link_set_while_the_site_is_being_asked_is_not_overwritten(
+    db_session: AsyncSession,
+    site: FakeComiconomicon,
+    database_url: str,
+    time_machine: TimeMachineFixture,
+) -> None:
+    person_id = await _person(db_session)
+    lookup = site.lookup()
+    await lookup.find(person_id, "Andrew Jackson")
+    time_machine.move_to(START + timedelta(days=200))
+    path = database_url.removeprefix("sqlite+aiosqlite:///")
+
+    def a_person_links_it_meanwhile(request: httpx2.Request) -> httpx2.Response:
+        with closing(sqlite3.connect(path)) as connection:
+            connection.execute(
+                "UPDATE source_lookups SET source_key = '777', manual = 1"
+            )
+            connection.commit()
+        return httpx2.Response(200, text=GUEST)
+
+    client = create_client(transport=httpx2.MockTransport(a_person_links_it_meanwhile))
+    racing = GuestLookup(db_session, ComiconomiconFetcher(client, min_interval=0.0))
+
+    entry = await racing.find(person_id, "Andrew Jackson")
+
+    assert (entry.source_key, entry.manual) == ("777", True)
+    [stored] = await _stored(db_session)
+    assert (stored.source_key, stored.manual, stored.looked_up_at) == (
+        "777",
+        True,
+        START,
+    )

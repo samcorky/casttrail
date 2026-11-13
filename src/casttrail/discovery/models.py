@@ -227,6 +227,7 @@ class SourceLookup(Base):
             "(outcome = 'found') = (source_key IS NOT NULL AND source_url IS NOT NULL)",
             name="found_has_a_key",
         ),
+        CheckConstraint("NOT manual OR outcome = 'found'", name="manual_is_found"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
@@ -238,3 +239,6 @@ class SourceLookup(Base):
     source_key: Mapped[str | None] = mapped_column(String(255))
     source_url: Mapped[str | None] = mapped_column(String(500))
     looked_up_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utc_now)
+    # Set by a person, not found by a search. Such a row never goes stale and a search
+    # never replaces it; only a person can remove it.
+    manual: Mapped[bool] = mapped_column(default=False, server_default=text("0"))

@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 
 from casttrail.catalogue.models import Person
 from casttrail.db import utc_now
+from casttrail.discovery.links import RosterconLinks
 from casttrail.discovery.models import JobRun
 from casttrail.discovery.service import DiscoveryService
 from casttrail.matching.service import MatchService
@@ -17,11 +18,16 @@ from casttrail.providers.base import ProviderError
 from casttrail.providers.rostercon import (
     PROVIDER_ID,
     ListedEvent,
+    PersonPage,
     parse_all_events_link,
     parse_event_page,
     parse_event_rows,
 )
-from casttrail.providers.rostercon_client import RosterconUnavailableError, find_people
+from casttrail.providers.rostercon_client import (
+    FoundPerson,
+    RosterconUnavailableError,
+    find_people,
+)
 from casttrail.watching.models import Watch
 
 if TYPE_CHECKING:
@@ -31,7 +37,7 @@ if TYPE_CHECKING:
 
     from sqlalchemy.ext.asyncio import AsyncSession
 
-    from casttrail.providers.rostercon_client import FoundPerson, RosterconFetcher
+    from casttrail.providers.rostercon_client import RosterconFetcher
 
 logger = structlog.get_logger(__name__)
 
@@ -202,12 +208,25 @@ class RosterconRefresh:
         if not people:
             return
         events: dict[str, ListedEvent] = {}
-        for _, name in people:
-            await self._collect(name, events, report)
+        for person_id, name in people:
+            await self._collect(person_id, name, events, report)
         await self._fetch_events(events, report)
 
-    async def _find(self, name: str, report: RefreshReport) -> FoundPerson | None:
-        """Look the name up; count and log it unless exactly one page is theirs."""
+    async def _find(
+        self, person_id: uuid.UUID, name: str, report: RefreshReport
+    ) -> FoundPerson | None:
+        """Get the person's page: the one linked by hand, else the one their name has.
+
+        A page linked by hand is used as it is and never guessed around; a name is
+        looked up only when nobody has linked one. What the name lookup finds is
+        remembered, so the admin can see who could not be placed.
+        """
+        links = RosterconLinks(self._session)
+        linked = await links.manual(person_id)
+        # Reading began a transaction; release the write lock before the fetching.
+        await self._session.commit()
+        if linked is not None:
+            return await self._fetch_linked(name, linked, report)
         try:
             matches = await find_people(self._fetcher, name)
         except RosterconUnavailableError:
@@ -219,21 +238,40 @@ class RosterconRefresh:
         if not matches:
             report.people_unmatched += 1
             logger.info("person_unmatched", person=name)
+            await links.remember(person_id, "not_found")
             return None
         if len(matches) > 1:
             report.people_ambiguous += 1
             slugs = [m.page.slug for m in matches]
             logger.warning("person_ambiguous", person=name, candidates=slugs)
+            await links.remember(person_id, "ambiguous")
             return None
+        await links.remember(person_id, "found", matches[0].page)
         return matches[0]
+
+    async def _fetch_linked(
+        self, name: str, linked: PersonPage, report: RefreshReport
+    ) -> FoundPerson | None:
+        try:
+            page = await self._fetcher.get(linked.url)
+        except RosterconUnavailableError:
+            raise
+        except ProviderError as error:
+            report.people_failed += 1
+            logger.warning(
+                "person_link_failed", person=name, slug=linked.slug, error=str(error)
+            )
+            return None
+        return FoundPerson(linked, page.text)
 
     async def _collect(
         self,
+        person_id: uuid.UUID,
         name: str,
         events: dict[str, ListedEvent],
         report: RefreshReport,
     ) -> None:
-        found = await self._find(name, report)
+        found = await self._find(person_id, name, report)
         if found is None:
             return
         try:

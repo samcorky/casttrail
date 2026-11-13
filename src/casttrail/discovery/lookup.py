@@ -37,8 +37,11 @@ def is_fresh(entry: SourceLookup) -> bool:
         entry: A stored lookup.
 
     Returns:
-        True if the site need not be asked again yet.
+        True if the site need not be asked again yet. A link set by a person never
+        goes stale.
     """
+    if entry.manual:
+        return True
     return utc_now() - entry.looked_up_at < FRESH_FOR[entry.outcome]
 
 
@@ -83,9 +86,13 @@ class GuestLookup:
         # Release the write lock before waiting on the site.
         await self._session.commit()
         guests = await find_guests(self._fetcher, name)
-        entry = await self._stored(person_id) or SourceLookup(
-            provider=PROVIDER_ID, person_id=person_id
-        )
+        # Read again from the database: a person may have set the link while the site
+        # was being asked, and that must not be overwritten.
+        entry = await self._stored(person_id, refresh=True)
+        if entry is not None and entry.manual:
+            self._log(person_id, entry, cached=True)
+            return entry
+        entry = entry or SourceLookup(provider=PROVIDER_ID, person_id=person_id)
         if len(guests) == 1:
             entry.outcome = "found"
             entry.source_key = guests[0].source_key
@@ -99,13 +106,17 @@ class GuestLookup:
         self._log(person_id, entry, cached=False)
         return entry
 
-    async def _stored(self, person_id: uuid.UUID) -> SourceLookup | None:
-        return await self._session.scalar(
-            select(SourceLookup).where(
-                SourceLookup.provider == PROVIDER_ID,
-                SourceLookup.person_id == person_id,
-            )
+    async def _stored(
+        self, person_id: uuid.UUID, *, refresh: bool = False
+    ) -> SourceLookup | None:
+        query = select(SourceLookup).where(
+            SourceLookup.provider == PROVIDER_ID,
+            SourceLookup.person_id == person_id,
         )
+        if refresh:
+            # Without this the session hands back the copy it already holds.
+            query = query.execution_options(populate_existing=True)
+        return await self._session.scalar(query)
 
     @staticmethod
     def _log(person_id: uuid.UUID, entry: SourceLookup, *, cached: bool) -> None:
