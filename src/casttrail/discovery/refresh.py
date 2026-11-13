@@ -11,14 +11,15 @@ from sqlalchemy.exc import IntegrityError
 
 from casttrail.catalogue.models import Person
 from casttrail.db import utc_now
-from casttrail.discovery.links import KnownPage, RosterconLinks
+from casttrail.discovery.links import ROSTERCON, KnownPage, SourceLinks
 from casttrail.discovery.models import JobRun
 from casttrail.discovery.service import DiscoveryService
 from casttrail.matching.service import MatchService
-from casttrail.providers.base import ProviderError
+from casttrail.providers.base import LinkTarget, ProviderError
 from casttrail.providers.rostercon import (
     PROVIDER_ID,
     ListedEvent,
+    PersonPage,
     parse_all_events_link,
     parse_event_page,
     parse_event_rows,
@@ -234,7 +235,7 @@ class RosterconRefresh:
         lookup costs; only if it has gone is the name looked up again. What a name
         lookup finds is remembered, so the admin can see who could not be placed.
         """
-        links = RosterconLinks(self._session)
+        links = SourceLinks(self._session, ROSTERCON)
         known = await links.known(person_id)
         # Reading began a transaction; release the write lock before the fetching.
         await self._session.commit()
@@ -242,7 +243,7 @@ class RosterconRefresh:
             try:
                 return await self._use_known(name, known, report)
             except _PageMoved:
-                logger.info("person_page_gone", person=name, slug=known.page.slug)
+                logger.info("person_page_gone", person=name, slug=known.page.key)
         return await self._find_by_name(links, person_id, name, report)
 
     async def _use_known(
@@ -260,17 +261,18 @@ class RosterconRefresh:
             logger.warning(
                 "person_link_failed",
                 person=name,
-                slug=known.page.slug,
+                slug=known.page.key,
                 manual=known.manual,
                 error=str(error),
             )
             return None
-        logger.debug("person_page_reused", person=name, slug=known.page.slug)
-        return FoundPerson(known.page, page.text)
+        logger.debug("person_page_reused", person=name, slug=known.page.key)
+        found = PersonPage(slug=known.page.key, url=known.page.url)
+        return FoundPerson(found, page.text)
 
     async def _find_by_name(
         self,
-        links: RosterconLinks,
+        links: SourceLinks,
         person_id: uuid.UUID,
         name: str,
         report: RefreshReport,
@@ -294,7 +296,8 @@ class RosterconRefresh:
             logger.warning("person_ambiguous", person=name, candidates=slugs)
             await links.remember(person_id, "ambiguous")
             return None
-        await links.remember(person_id, "found", matches[0].page)
+        page = matches[0].page
+        await links.remember(person_id, "found", LinkTarget(page.slug, page.url))
         return matches[0]
 
     async def _collect(

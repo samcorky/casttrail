@@ -1,4 +1,5 @@
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
@@ -9,7 +10,8 @@ from sqlalchemy import delete, select
 from casttrail.catalogue.models import Person
 from casttrail.db import utc_now
 from casttrail.discovery.models import SourceLookup
-from casttrail.providers.rostercon import PROVIDER_ID, PersonPage, parse_person_link
+from casttrail.providers import comiconomicon, rostercon
+from casttrail.providers.base import LinkTarget
 from casttrail.watching.models import Watch
 
 if TYPE_CHECKING:
@@ -24,8 +26,54 @@ logger = structlog.get_logger(__name__)
 RECHECK_AFTER = timedelta(days=30)
 
 
+@dataclass(frozen=True)
+class LinkSource:
+    """A site a watched person can be linked to a page on.
+
+    A new source is one more of these: its name in the database, how it is shown, an
+    example address for the form, and the parser that checks a pasted address.
+    """
+
+    provider: str
+    label: str
+    example: str
+    parse: Callable[[str], LinkTarget | None]
+
+
+def _parse_rostercon(text: str) -> LinkTarget | None:
+    page = rostercon.parse_person_link(text)
+    return LinkTarget(key=page.slug, url=page.url) if page else None
+
+
+ROSTERCON = LinkSource(
+    provider=rostercon.PROVIDER_ID,
+    label="Rostercon",
+    example="https://www.rostercon.com/en/people/tom-wilson-en",
+    parse=_parse_rostercon,
+)
+COMICONOMICON = LinkSource(
+    provider=comiconomicon.PROVIDER_ID,
+    label="Comiconomicon",
+    example="https://comiconomicon.com/guest/518/Andrew_Jackson",
+    parse=comiconomicon.parse_guest_link,
+)
+SOURCES = (ROSTERCON, COMICONOMICON)
+
+
+def source_by_provider(provider: str) -> LinkSource | None:
+    """Find a source by its name in the database.
+
+    Args:
+        provider: The provider id, such as ``rostercon``.
+
+    Returns:
+        The source, or ``None`` if there is no such source.
+    """
+    return next((s for s in SOURCES if s.provider == provider), None)
+
+
 class InvalidLinkError(ValueError):
-    """What was pasted is not the address of a Rostercon person page."""
+    """What was pasted is not the address of a page on the source."""
 
 
 class UnknownPersonError(LookupError):
@@ -33,46 +81,48 @@ class UnknownPersonError(LookupError):
 
 
 @dataclass(frozen=True)
-class RosterconLink:
-    """A watched person and what is known about their Rostercon page.
+class SourceLink:
+    """A watched person and what is known about their page on one source.
 
     ``state`` is ``manual`` (a person set the link), ``found`` (the name matched one
-    page), ``not_found``, ``ambiguous``, or ``unknown`` when no refresh has looked yet.
+    page), ``not_found``, ``ambiguous``, or ``unknown`` when nothing has looked yet.
     """
 
     person_id: uuid.UUID
     name: str
     state: str
-    slug: str | None
+    key: str | None
     url: str | None
     looked_up_at: datetime | None
 
 
 @dataclass(frozen=True)
 class KnownPage:
-    """A person's Rostercon page that need not be looked up by name."""
+    """A person's page on a source that need not be looked up by name."""
 
-    page: PersonPage
+    page: LinkTarget
     manual: bool
 
 
-class RosterconLinks:
-    """Links watched people to their Rostercon pages, by hand or by what a refresh saw.
+class SourceLinks:
+    """Links watched people to their pages on one source, by hand or by a lookup.
 
     A link set by hand always wins: a refresh uses it instead of guessing the page from
     the name, and nothing the refresh learns replaces or removes it.
     """
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: AsyncSession, source: LinkSource) -> None:
         """Create the service.
 
         Args:
             session: The database session.
+            source: The site the links are on.
         """
         self._session = session
+        self._source = source
 
-    async def watched(self) -> list[RosterconLink]:
-        """List every watched person with the state of their Rostercon link.
+    async def watched(self) -> list[SourceLink]:
+        """List every watched person with the state of their link on this source.
 
         Returns:
             One row per person anyone watches, ordered by name.
@@ -83,7 +133,7 @@ class RosterconLinks:
             .outerjoin(
                 SourceLookup,
                 (SourceLookup.person_id == Person.id)
-                & (SourceLookup.provider == PROVIDER_ID),
+                & (SourceLookup.provider == self._source.provider),
             )
             .distinct()
             .order_by(Person.name, Person.id)
@@ -93,7 +143,7 @@ class RosterconLinks:
     async def known(self, person_id: uuid.UUID) -> KnownPage | None:
         """Get a person's page if it is known well enough not to look the name up.
 
-        A page set by hand is always known. A page a refresh found by name is known for
+        A page set by hand is always known. A page found by name is known for
         ``RECHECK_AFTER``. A person who was not found, or has several pages, is never
         known: they are looked up again each time.
 
@@ -110,10 +160,10 @@ class RosterconLinks:
             return None
         assert lookup.source_key is not None
         assert lookup.source_url is not None
-        page = PersonPage(slug=lookup.source_key, url=lookup.source_url)
+        page = LinkTarget(key=lookup.source_key, url=lookup.source_url)
         return KnownPage(page, lookup.manual)
 
-    async def manual(self, person_id: uuid.UUID) -> PersonPage | None:
+    async def manual(self, person_id: uuid.UUID) -> LinkTarget | None:
         """Get the page a person set by hand for someone.
 
         Args:
@@ -125,37 +175,41 @@ class RosterconLinks:
         known = await self.known(person_id)
         return known.page if known is not None and known.manual else None
 
-    async def link(self, person_id: uuid.UUID, text: str) -> PersonPage:
-        """Set a person's Rostercon page by hand, replacing any earlier answer.
+    async def link(self, person_id: uuid.UUID, text: str) -> LinkTarget:
+        """Set a person's page by hand, replacing any earlier answer.
 
         Args:
             person_id: The person.
-            text: The pasted address of their Rostercon page.
+            text: The pasted address of their page on this source.
 
         Returns:
             The page that was stored.
 
         Raises:
-            InvalidLinkError: The text is not a Rostercon person page address.
+            InvalidLinkError: The text is not a page address on this source.
             UnknownPersonError: There is no such person.
         """
-        page = parse_person_link(text)
+        page = self._source.parse(text)
         if page is None:
-            raise InvalidLinkError(
-                "That is not the address of a Rostercon person page."
-            )
+            msg = f"That is not the address of a {self._source.label} page."
+            raise InvalidLinkError(msg)
         if await self._session.get(Person, person_id) is None:
             raise UnknownPersonError(str(person_id))
         lookup = await self._stored(person_id) or SourceLookup(
-            provider=PROVIDER_ID, person_id=person_id
+            provider=self._source.provider, person_id=person_id
         )
         lookup.outcome = "found"
-        lookup.source_key, lookup.source_url = page.slug, page.url
+        lookup.source_key, lookup.source_url = page.key, page.url
         lookup.manual = True
         lookup.looked_up_at = utc_now()
         self._session.add(lookup)
         await self._session.commit()
-        logger.info("rostercon_link_set", person_id=str(person_id), slug=page.slug)
+        logger.info(
+            "source_link_set",
+            source=self._source.provider,
+            person_id=str(person_id),
+            key=page.key,
+        )
         return page
 
     async def unlink(self, person_id: uuid.UUID) -> bool:
@@ -169,7 +223,7 @@ class RosterconLinks:
         """
         result = await self._session.execute(
             delete(SourceLookup).where(
-                SourceLookup.provider == PROVIDER_ID,
+                SourceLookup.provider == self._source.provider,
                 SourceLookup.person_id == person_id,
                 SourceLookup.manual.is_(True),
             )
@@ -177,13 +231,17 @@ class RosterconLinks:
         await self._session.commit()
         removed = bool(result.rowcount)  # type: ignore[attr-defined]
         if removed:
-            logger.info("rostercon_link_removed", person_id=str(person_id))
+            logger.info(
+                "source_link_removed",
+                source=self._source.provider,
+                person_id=str(person_id),
+            )
         return removed
 
     async def remember(
-        self, person_id: uuid.UUID, outcome: str, page: PersonPage | None = None
+        self, person_id: uuid.UUID, outcome: str, page: LinkTarget | None = None
     ) -> None:
-        """Note what a refresh found by name, unless a person has set the link.
+        """Note what a lookup by name found, unless a person has set the link.
 
         Args:
             person_id: The person.
@@ -193,9 +251,11 @@ class RosterconLinks:
         lookup = await self._stored(person_id)
         if lookup is not None and lookup.manual:
             return
-        lookup = lookup or SourceLookup(provider=PROVIDER_ID, person_id=person_id)
+        lookup = lookup or SourceLookup(
+            provider=self._source.provider, person_id=person_id
+        )
         lookup.outcome = outcome
-        lookup.source_key = page.slug if page else None
+        lookup.source_key = page.key if page else None
         lookup.source_url = page.url if page else None
         lookup.looked_up_at = utc_now()
         self._session.add(lookup)
@@ -204,19 +264,17 @@ class RosterconLinks:
     async def _stored(self, person_id: uuid.UUID) -> SourceLookup | None:
         return await self._session.scalar(
             select(SourceLookup).where(
-                SourceLookup.provider == PROVIDER_ID,
+                SourceLookup.provider == self._source.provider,
                 SourceLookup.person_id == person_id,
             )
         )
 
 
-def _link(
-    person_id: uuid.UUID, name: str, lookup: SourceLookup | None
-) -> RosterconLink:
+def _link(person_id: uuid.UUID, name: str, lookup: SourceLookup | None) -> SourceLink:
     if lookup is None:
-        return RosterconLink(person_id, name, "unknown", None, None, None)
+        return SourceLink(person_id, name, "unknown", None, None, None)
     state = "manual" if lookup.manual else lookup.outcome
-    return RosterconLink(
+    return SourceLink(
         person_id,
         name,
         state,
