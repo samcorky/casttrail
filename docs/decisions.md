@@ -435,4 +435,3 @@ The app is meant to run in Docker. Files: `Dockerfile`, `compose.yaml`, `.docker
 - **Same rules everywhere:** a link set by hand never goes stale and is never replaced by a lookup (`GuestLookup` re-reads the row after waiting on the site, as for Rostercon); only an admin can remove it; a refresh's own answers are never removed from this page.
 - **Changed names:** log events are `source_link_set` and `source_link_removed` with a `source` key (they were `rostercon_link_*`). `RosterconLinks` and `RosterconLink` became `SourceLinks` and `SourceLink`; a page is a `LinkTarget(key, url)` (a Rostercon `slug` is its `key`).
 - **Not done:** only Rostercon's refresh uses the manual link so far. Comiconomicon's refresh does not exist yet (plan 5.5c); when it does it goes through `GuestLookup`, which already honours these links.
-
