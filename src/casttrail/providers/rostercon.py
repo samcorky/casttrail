@@ -1,3 +1,4 @@
+import html
 import json
 import re
 import unicodedata
@@ -93,7 +94,15 @@ def _is_event(node: dict[str, Any]) -> bool:
 
 
 def _text(value: object) -> str | None:
-    return value.strip() or None if isinstance(value, str) else None
+    """Read a text value from the page's JSON data, with its HTML entities decoded.
+
+    WordPress writes ``&`` as ``&#038;`` and ``'`` as ``&#8217;`` even inside the JSON,
+    where an HTML parser does not decode them. They are decoded here, once, and the
+    result is still only text: it is shown escaped, never as markup.
+    """
+    if not isinstance(value, str):
+        return None
+    return html.unescape(value).strip() or None
 
 
 def _day(value: object) -> date | None:
@@ -430,3 +439,20 @@ def parse_person_link(text: str) -> PersonPage | None:
     if len(slug) > _MAX_SLUG or not _PERSON_SLUG.fullmatch(slug):
         return None
     return PersonPage(slug=slug, url=f"https://{HOST}{PERSON_PATH}{slug}")
+
+
+def person_url(slug: str) -> str | None:
+    """Give the address of a person's Rostercon page, from the name part of it.
+
+    The address is built here, never taken from imported data, and only for a plain
+    name, so what is stored can be shown as a link without trusting it.
+
+    Args:
+        slug: The name part of the address, such as ``paul-mcgann-en``.
+
+    Returns:
+        The page, or ``None`` if ``slug`` is not a plain name.
+    """
+    if len(slug) > _MAX_SLUG or not _PERSON_SLUG.fullmatch(slug):
+        return None
+    return f"https://{HOST}{PERSON_PATH}{slug}"
