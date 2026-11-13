@@ -395,3 +395,54 @@ async def test_a_page_linked_through_the_admin_service_is_used_without_asking(
 
     assert (entry.source_key, entry.manual) == ("777", True)
     assert site.requests == []
+
+
+# --- forgetting an answer -----------------------------------------------------------
+
+
+async def test_a_forgotten_answer_is_asked_for_again(
+    db_session: AsyncSession, site: FakeComiconomicon
+) -> None:
+    person_id = await _person(db_session)
+    lookup = site.lookup()
+    await lookup.find(person_id, "Andrew Jackson")
+
+    assert await lookup.forget(person_id) is True
+
+    assert await _stored(db_session) == []
+    await lookup.find(person_id, "Andrew Jackson")
+    assert len(site.requests) == 2
+
+
+async def test_forgetting_nothing_says_so(
+    db_session: AsyncSession, site: FakeComiconomicon
+) -> None:
+    person_id = await _person(db_session)
+
+    assert await site.lookup().forget(person_id) is False
+
+
+async def test_a_link_set_by_a_person_is_never_forgotten(
+    db_session: AsyncSession, site: FakeComiconomicon
+) -> None:
+    person_id = await _person(db_session)
+    await _manual_link(db_session, person_id)
+
+    assert await site.lookup().forget(person_id) is False
+
+    [kept] = await _stored(db_session)
+    assert (kept.source_key, kept.manual) == ("777", True)
+
+
+async def test_forgetting_one_person_leaves_another(
+    db_session: AsyncSession, site: FakeComiconomicon
+) -> None:
+    andrew = await _person(db_session)
+    other = await _person(db_session, "Someone Unknown")
+    lookup = site.lookup()
+    await lookup.find(andrew, "Andrew Jackson")
+    await lookup.find(other, "Someone Unknown")
+
+    await lookup.forget(andrew)
+
+    assert [s.person_id for s in await _stored(db_session)] == [other]

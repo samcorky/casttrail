@@ -11,7 +11,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 import casttrail.maintenance as maintenance
 from casttrail.auth.errors import AccountError
 from casttrail.discovery.health import rostercon_health
-from casttrail.discovery.schedule import recent_runs, run_in_background
+from casttrail.discovery.schedule import SOURCE_LABELS, recent_runs, run_in_background
 from casttrail.startup import run_backup
 from casttrail.web.dependencies import (
     AdminServiceDep,
@@ -222,7 +222,11 @@ async def refresh_page(
         The page.
     """
     runs = [
-        {"run": run, "counts": _summary(run.summary)}
+        {
+            "run": run,
+            "source": SOURCE_LABELS.get(run.job, run.job),
+            "counts": _summary(run.summary),
+        }
         for run in await recent_runs(session)
     ]
     context = {

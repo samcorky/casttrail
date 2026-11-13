@@ -2,7 +2,7 @@ from datetime import timedelta
 from typing import TYPE_CHECKING
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from casttrail.db import utc_now
 from casttrail.discovery.models import SourceLookup
@@ -105,6 +105,27 @@ class GuestLookup:
         await self._session.commit()
         self._log(person_id, entry, cached=False)
         return entry
+
+    async def forget(self, person_id: uuid.UUID) -> bool:
+        """Drop a remembered answer, so the next lookup asks the site again.
+
+        A link set by a person is never dropped.
+
+        Args:
+            person_id: The person.
+
+        Returns:
+            True if an answer was dropped.
+        """
+        result = await self._session.execute(
+            delete(SourceLookup).where(
+                SourceLookup.provider == PROVIDER_ID,
+                SourceLookup.person_id == person_id,
+                SourceLookup.manual.is_(False),
+            )
+        )
+        await self._session.commit()
+        return bool(result.rowcount)  # type: ignore[attr-defined]
 
     async def _stored(
         self, person_id: uuid.UUID, *, refresh: bool = False

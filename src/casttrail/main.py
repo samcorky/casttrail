@@ -15,8 +15,10 @@ from casttrail.auth.bootstrap import bootstrap_admin
 from casttrail.auth.service import AuthService
 from casttrail.config import Settings
 from casttrail.db import create_engine, create_session_factory
-from casttrail.discovery.schedule import RefreshJob, run_in_background
+from casttrail.discovery.comiconomicon_refresh import ComiconomiconRefresh
+from casttrail.discovery.schedule import RefreshAll, RefreshJob, run_in_background
 from casttrail.logging_config import configure_logging
+from casttrail.providers.comiconomicon_client import ComiconomiconFetcher
 from casttrail.providers.polite import create_client as create_scraping_client
 from casttrail.providers.rostercon_client import RosterconFetcher
 from casttrail.providers.tmdb import TmdbProvider, create_client
@@ -103,7 +105,7 @@ def _start_scheduler(
             run_in_background,
             CronTrigger(hour=settings.refresh_hour, minute=0),
             args=[refresher],
-            id="rostercon-refresh",
+            id="refresh",
             **timer,
         )
     if backups:
@@ -184,10 +186,16 @@ def _start_providers(
         opened.append(tmdb_client)
         app.state.metadata = TmdbProvider(tmdb_client)
     if refresher is None:
-        rostercon_http = create_scraping_client()
-        opened.append(rostercon_http)
-        fetcher = RosterconFetcher(rostercon_http)
-        app.state.refresher = RefreshJob(app.state.session_factory, fetcher)
+        scraping_http = create_scraping_client()
+        opened.append(scraping_http)
+        factory = app.state.session_factory
+        # Each site has its own fetcher, so its spacing and cooldown are its own.
+        app.state.refresher = RefreshAll(
+            RefreshJob(factory, RosterconFetcher(scraping_http)),
+            RefreshJob(
+                factory, ComiconomiconFetcher(scraping_http), ComiconomiconRefresh
+            ),
+        )
     else:
         app.state.refresher = refresher
     return opened

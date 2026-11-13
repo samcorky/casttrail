@@ -21,7 +21,12 @@ from casttrail.config import Settings
 from casttrail.db import create_engine, create_session_factory
 from casttrail.discovery.models import JobRun
 from casttrail.discovery.refresh import RefreshReport
-from casttrail.discovery.schedule import RefreshJob, recent_runs, run_in_background
+from casttrail.discovery.schedule import (
+    RefreshAll,
+    RefreshJob,
+    recent_runs,
+    run_in_background,
+)
 from casttrail.main import _start_scheduler, create_app
 from casttrail.providers.polite import create_client
 from casttrail.providers.rostercon_client import RosterconFetcher
@@ -319,7 +324,7 @@ async def test_the_timer_runs_the_refresh_once_a_day_at_the_chosen_hour(
         jobs = scheduler.get_jobs()
         assert len(jobs) == 1
         job = jobs[0]
-        assert job.id == "rostercon-refresh"
+        assert job.id == "refresh"
         assert job.func is run_in_background
         assert job.args == (refresher,)
         assert (job.max_instances, job.coalesce, job.misfire_grace_time) == (
@@ -377,7 +382,13 @@ def test_the_real_refresh_is_built_when_none_is_given(
 ) -> None:
     _seed(database_url)
     with TestClient(create_app(settings)) as client:
-        assert isinstance(_state(client).refresher, RefreshJob)  # type: ignore[attr-defined]
+        refresher = _state(client).refresher  # type: ignore[attr-defined]
+        assert isinstance(refresher, RefreshAll)
+        jobs = [job for job in refresher.jobs if isinstance(job, RefreshJob)]
+        assert [job.job for job in jobs] == [
+            "rostercon-refresh",
+            "comiconomicon-refresh",
+        ]
 
 
 @pytest.mark.parametrize("hour", [-1, 24, 100])
@@ -453,3 +464,37 @@ async def test_recent_runs_stop_at_the_limit(db_session: AsyncSession) -> None:
     runs = await recent_runs(db_session, limit=3)
 
     assert [run.started_at.day for run in runs] == [5, 4, 3]
+
+
+# --- the refresh page shows every source --------------------------------------------
+
+
+def test_the_page_says_which_source_each_run_was(
+    settings: Settings, database_url: str, refresher: FakeRefresher
+) -> None:
+    other = JobRun(
+        job="comiconomicon-refresh",
+        status="succeeded",
+        started_at=datetime(2026, 11, 9, 4, 0, tzinfo=UTC),
+        summary=json.dumps({"people_watched": 5, "people_matched": 4}),
+    )
+    _seed(database_url, [_run("succeeded", 8), other])
+
+    for client in _clients(settings, refresher):
+        _sign_in(client, "admin@example.com")
+        page = client.get("/admin/refresh").text
+
+    comiconomicon = page[page.index("2026-11-09") :]
+    assert "Comiconomicon" in comiconomicon[: comiconomicon.index("</tr>")]
+    rostercon = page[page.index("2026-11-08") :]
+    assert "Rostercon" in rostercon[: rostercon.index("</tr>")]
+    assert "4 of 5" in page
+
+
+def test_the_page_describes_every_source_it_refreshes(client: TestClient) -> None:
+    _sign_in(client, "admin@example.com")
+
+    page = client.get("/admin/refresh").text
+
+    assert "Rostercon" in page
+    assert "Comiconomicon" in page

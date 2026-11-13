@@ -63,7 +63,7 @@ the database is brought up to date and a backup is taken, all at startup.
 3. If the newest backup is more than a day old (a PC that sleeps at night), one is taken.
 4. The first administrator is created if the database has no users and the admin
    settings are set.
-5. Timers start: the daily backup, and the Rostercon refresh if switched on.
+5. Timers start: the daily backup, and the daily refresh (Rostercon, then Comiconomicon) if switched on.
 
 A problem in step 1 or 2 does not crash the app. It starts, every page shows a plain
 "needs attention" message, and `/health` answers `503 {"status": "degraded"}`. The
@@ -103,7 +103,7 @@ does not help if the disk is lost.
 | `CASTTRAIL_BACKUP_DIR` | beside the database | Where backups go |
 | `CASTTRAIL_BACKUP_KEEP` | `14` | Daily copies kept |
 | `CASTTRAIL_BACKUP_HOUR` | `3` | Hour of the daily backup (server local time) |
-| `CASTTRAIL_REFRESH_ENABLED` | `false` | Contact Rostercon daily |
+| `CASTTRAIL_REFRESH_ENABLED` | `false` | Contact Rostercon and Comiconomicon daily |
 | `CASTTRAIL_REFRESH_HOUR` | `4` | Hour of the refresh |
 | `CASTTRAIL_LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING` or `ERROR` |
 | `CASTTRAIL_LOG_FORMAT` | `auto` | `json`, `console`, or `auto` (JSON unless a terminal is attached) |
