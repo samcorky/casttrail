@@ -355,3 +355,62 @@ def test_names_with_odd_characters_survive() -> None:
     assert parsed.convention is not None
     assert parsed.convention.name == "Con & Café “2027”"
     assert parsed.guests.items[0].name == "Zoë Ball & <Co>"
+
+
+# --- entities in the data -----------------------------------------------------------
+
+
+def test_entities_in_the_events_data_are_decoded() -> None:
+    # WordPress writes "&" as "&#038;" even inside the JSON, which a browser would
+    # show as "&" but a JSON parser leaves as it is.
+    event = _event(
+        name="For the Love of Time &#038; Space (2027)",
+        location={
+            "address": {
+                "streetAddress": "The O&#8217;Neill Rooms &amp; Bar",
+                "addressLocality": "St&#8217;Albans",
+                "addressRegion": "England",
+            }
+        },
+        organizer={"name": "Time &#038; Space Events"},
+        performer=[
+            {"@type": "Person", "name": "Eric O&#8217;Neill", "url": PERSON_URL},
+        ],
+    )
+
+    parsed = parse_event_page(_page(event))
+
+    convention = parsed.convention
+    assert convention is not None
+    assert convention.name == "For the Love of Time & Space (2027)"
+    assert convention.venue == "The O\u2019Neill Rooms & Bar"
+    assert convention.city == "St\u2019Albans"
+    assert convention.organizer == "Time & Space Events"
+    assert [g.name for g in parsed.guests.items] == ["Eric O\u2019Neill"]
+
+
+def test_a_name_with_no_entities_is_left_exactly_as_it_is() -> None:
+    parsed = parse_event_page(_page(_event(name="Comic Con & Co. (2027)")))
+
+    assert parsed.convention is not None
+    assert parsed.convention.name == "Comic Con & Co. (2027)"
+
+
+def test_entities_are_decoded_once_and_not_twice() -> None:
+    parsed = parse_event_page(_page(_event(name="Tom &amp;#038; Jerry")))
+
+    assert parsed.convention is not None
+    assert parsed.convention.name == "Tom &#038; Jerry"
+
+
+def test_a_name_that_is_only_an_entity_for_a_space_is_no_name() -> None:
+    parsed = parse_event_page(_page(_event(name="&nbsp;&#32;")))
+
+    assert parsed.convention is None
+
+
+def test_decoded_markup_stays_text() -> None:
+    parsed = parse_event_page(_page(_event(name="A &lt;b&gt;bold&lt;/b&gt; Con")))
+
+    assert parsed.convention is not None
+    assert parsed.convention.name == "A <b>bold</b> Con"

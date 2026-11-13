@@ -1027,3 +1027,21 @@ async def test_noting_a_pair_twice_in_either_order_keeps_one_row(
     assert added == [1, 0, 0]
     (merge,) = await _merges(db_session)
     assert (merge.first_id, merge.second_id) == tuple(sorted((one, two), key=str))
+
+
+async def test_a_name_stored_with_an_undecoded_entity_is_corrected_on_the_next_fetch(
+    service: DiscoveryService, db_session: AsyncSession
+) -> None:
+    # What an older version stored for "For the Love of Time & Space".
+    await service.ingest(
+        "rostercon", _convention(name="Time &#038; Space (2027)"), _listing("a-a")
+    )
+
+    await service.ingest(
+        "rostercon", _convention(name="Time & Space (2027)"), _listing("a-a")
+    )
+
+    convention = await db_session.scalar(select(Convention))
+    assert convention is not None
+    assert convention.name == "Time & Space (2027)"
+    assert await _count(db_session, Convention) == 1
