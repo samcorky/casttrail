@@ -20,11 +20,12 @@
   {% if suggestions %}
   <div class="table-responsive">
     <table class="table table-hover align-middle">
-      <thead><tr><th>Guest</th><th>Watched person</th><th class="text-end">Events</th><th>Actions</th></tr></thead>
+      <thead><tr><th>Guest</th><th>Source</th><th>Watched person</th><th class="text-end">Events</th><th>Actions</th></tr></thead>
       <tbody>
         {% for s in suggestions %}
         <tr>
           <td>{{ s.guest_name }}</td>
+          <td>{{ s.provider|capitalize }}<br><small class="text-body-secondary">{{ s.source_key }}</small></td>
           <td>{{ s.person_name }}</td>
           <td class="text-end">{{ s.events }}</td>
           <td>
@@ -57,11 +58,12 @@
   {% if linked %}
   <div class="table-responsive">
     <table class="table table-hover align-middle">
-      <thead><tr><th>Guest</th><th>Linked to</th><th>Actions</th></tr></thead>
+      <thead><tr><th>Guest</th><th>Source</th><th>Linked to</th><th>Actions</th></tr></thead>
       <tbody>
         {% for g in linked %}
         <tr>
           <td>{{ g.guest_name }}</td>
+          <td>{{ g.provider|capitalize }}<br><small class="text-body-secondary">{{ g.source_key }}</small></td>
           <td>{{ g.person_name }}</td>
           <td>
             <form method="post" action="/admin/review/unlink">
@@ -89,11 +91,12 @@
     {% if found %}
     <div class="table-responsive">
       <table class="table align-middle">
-        <thead><tr><th>Guest</th><th>Linked to</th><th>Link to</th></tr></thead>
+        <thead><tr><th>Guest</th><th>Source</th><th>Linked to</th><th>Link to</th></tr></thead>
         <tbody>
           {% for g in found %}
           <tr>
             <td>{{ g.guest_name }}</td>
+            <td>{{ g.provider|capitalize }}<br><small class="text-body-secondary">{{ g.source_key }}</small></td>
             <td>{{ g.person_name or "Nobody" }}</td>
             <td>
               <form method="post" action="/admin/review/confirm" class="input-group input-group-sm">
