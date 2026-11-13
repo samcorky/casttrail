@@ -302,6 +302,7 @@ Still open:
 - [x] A12 A refresh asks for a page it already knows instead of looking the name up again (1 request per person instead of about 4, which matters against Rostercon's limit of about 25 requests in 30 minutes), and a restart during a run is recorded as "Interrupted: the app stopped", not as a crash 🧪
 - [ ] A13 A run that is cut off (a refusal, a restart) resumes where it was cut instead of starting again at the first person: look up the people not refreshed for longest first, and cap the people (or requests) per run so a long watch list always makes progress inside Rostercon's limit of about 25 requests in 30 minutes. Record when each person was last refreshed 🗄️ 🧪
 - [x] A14 The Rostercon pages admin page is now **Source pages** and generic: a column per source (Rostercon and Comiconomicon today), each with its own address check, the same set-by-hand and remove rules, and the same states. A new source (Wikipedia, say) is one `LinkSource` definition in `discovery/links.py` (name, example address, parser), not a new page. A Comiconomicon link set here is honoured by `GuestLookup` 🧪 👁️ DEMO
+- [x] A15 Review guests links each guest to its page on the source (Rostercon or Comiconomicon), in the waiting, linked and search tables, so a reviewer can check who a guest is before confirming 🧪
 
 ### WP-6 ntfy alerts
 - [ ] 6.1 Notification tables and event keys 🗄️ 🧪
