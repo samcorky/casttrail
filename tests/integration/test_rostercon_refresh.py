@@ -17,7 +17,8 @@ from casttrail.identity.models import ExternalIdentity, IdentityDecision
 from casttrail.matching.models import Match
 from casttrail.matching.service import MatchService, RematchResult
 from casttrail.providers.base import PersonDetail
-from casttrail.providers.rostercon_client import RosterconFetcher, create_client
+from casttrail.providers.polite import create_client
+from casttrail.providers.rostercon_client import RosterconFetcher
 from casttrail.watching.models import Watch
 from casttrail.watching.service import WatchService
 
