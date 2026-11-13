@@ -685,3 +685,84 @@ def test_a_search_result_shows_its_source(client: TestClient) -> None:
     assert "Sean Pertwee" in found
     assert "Rostercon" in found
     assert "sean-en" in found
+
+
+# --- links to the source's page for each guest -------------------------------------
+
+
+def _link_in(row: str) -> str | None:
+    marker = 'href="'
+    if marker not in row:
+        return None
+    start = row.index(marker) + len(marker)
+    return row[start : row.index('"', start)]
+
+
+def test_a_waiting_guest_links_to_its_page_on_the_source(client: TestClient) -> None:
+    page = _admin(client).get("/admin/review").text
+
+    waiting = _section(page, "Waiting to be confirmed", "Linked guests")
+    paul = next(r for r in waiting.split("<tr>") if "Paul McGann" in r)
+    assert 'href="https://www.rostercon.com/en/people/paul-en"' in paul
+    assert 'target="_blank"' in paul
+    assert 'rel="noopener noreferrer"' in paul
+
+
+def test_a_comiconomicon_guest_links_to_its_page_on_comiconomicon(
+    settings: Settings, database_url: str, facts: Facts
+) -> None:
+    with _with_comiconomicon_paul(settings, database_url, facts) as client:
+        page = _admin(client).get("/admin/review").text
+
+    waiting = _section(page, "Waiting to be confirmed", "Linked guests")
+    rows = [r for r in waiting.split("<tr>") if "Comiconomicon" in r]
+    assert len(rows) == 1
+    assert 'href="https://comiconomicon.com/guest/518"' in rows[0]
+
+
+def test_a_linked_guest_links_to_its_page_on_the_source(
+    client: TestClient, facts: Facts
+) -> None:
+    admin = _admin(client)
+    admin.post(
+        "/admin/review/confirm",
+        data={"identity_id": str(facts.paul_guest), "person_id": str(facts.paul)},
+    )
+
+    linked = _section(admin.get("/admin/review").text, "Linked guests", "Find a guest")
+
+    assert 'href="https://www.rostercon.com/en/people/paul-en"' in linked
+
+
+def test_a_search_result_links_to_its_page_on_the_source(client: TestClient) -> None:
+    page = _admin(client).get("/admin/review?q=pertwee").text
+
+    found = page[page.index("Find a guest to link") :]
+    assert 'href="https://www.rostercon.com/en/people/sean-en"' in found
+
+
+def test_a_guest_whose_key_is_not_a_plain_name_is_shown_without_a_link(
+    settings: Settings, database_url: str, facts: Facts
+) -> None:
+    del facts
+
+    async def add() -> None:
+        engine = create_engine(database_url)
+        async with create_session_factory(engine)() as session:
+            await _guest(session, "javascript:alert(1)", "Odd Key", 9)
+            await _guest(session, "x", "Odd Provider", 10, provider="wikipedia")
+            await session.commit()
+        await engine.dispose()
+
+    asyncio.run(add())
+    with TestClient(
+        create_app(settings), follow_redirects=False, headers=SAME_ORIGIN
+    ) as client:
+        page = _admin(client).get("/admin/review?q=odd").text
+
+    found = page[page.index("Find a guest to link") :]
+    assert "Odd Key" in found
+    assert "Odd Provider" in found
+    assert "javascript:" not in "".join(_link_in(r) or "" for r in found.split("<tr>"))
+    for row in found.split("<tr>")[1:]:
+        assert "Odd" not in row or 'target="_blank"' not in row
