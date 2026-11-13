@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import func, select
 
 from casttrail.catalogue.models import Person
+from casttrail.discovery.links import page_url_for
 from casttrail.discovery.models import Appearance
 from casttrail.identity.models import ExternalIdentity
 from casttrail.matching.models import Match
@@ -26,6 +27,8 @@ class Suggestion:
     # with one name from different sources can be told apart.
     provider: str
     source_key: str
+    # The guest's page on the source, if it has a plain address.
+    url: str | None
     person_id: uuid.UUID
     person_name: str
     events: int
@@ -39,6 +42,7 @@ class GuestRow:
     guest_name: str
     provider: str
     source_key: str
+    url: str | None
     person_id: uuid.UUID | None
     person_name: str | None
 
@@ -81,7 +85,10 @@ async def suggestions(session: AsyncSession) -> list[Suggestion]:
         .group_by(ExternalIdentity.id, Person.id)
         .order_by(func.lower(SHOWN), Person.name, Person.id)
     )
-    return [Suggestion(i, str(g), r, k, p, n, int(c)) for i, g, r, k, p, n, c in rows]
+    return [
+        Suggestion(i, str(g), r, k, page_url_for(r, k), p, n, int(c))
+        for i, g, r, k, p, n, c in rows
+    ]
 
 
 async def linked_guests(session: AsyncSession) -> list[GuestRow]:
@@ -106,7 +113,9 @@ async def linked_guests(session: AsyncSession) -> list[GuestRow]:
         .where(IS_GUEST)
         .order_by(func.lower(SHOWN), ExternalIdentity.id)
     )
-    return [GuestRow(i, str(g), r, k, p, n) for i, g, r, k, p, n in rows]
+    return [
+        GuestRow(i, str(g), r, k, page_url_for(r, k), p, n) for i, g, r, k, p, n in rows
+    ]
 
 
 async def find_guests(session: AsyncSession, text: str) -> list[GuestRow]:
@@ -140,7 +149,9 @@ async def find_guests(session: AsyncSession, text: str) -> list[GuestRow]:
         .order_by(func.lower(SHOWN), ExternalIdentity.id)
         .limit(SEARCH_LIMIT)
     )
-    return [GuestRow(i, str(g), r, k, p, n) for i, g, r, k, p, n in rows]
+    return [
+        GuestRow(i, str(g), r, k, page_url_for(r, k), p, n) for i, g, r, k, p, n in rows
+    ]
 
 
 async def people_choices(session: AsyncSession) -> list[tuple[uuid.UUID, str]]:
