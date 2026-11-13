@@ -25,7 +25,7 @@
         {% for s in suggestions %}
         <tr>
           <td>{{ s.guest_name }}</td>
-          <td>{{ s.provider|capitalize }}<br><small class="text-body-secondary">{{ s.source_key }}</small></td>
+          <td>{{ s.provider|capitalize }}<br>{% if s.url %}<a href="{{ s.url }}" target="_blank" rel="noopener noreferrer"><small>{{ s.source_key }}</small></a>{% else %}<small class="text-body-secondary">{{ s.source_key }}</small>{% endif %}</td>
           <td>{{ s.person_name }}</td>
           <td class="text-end">{{ s.events }}</td>
           <td>
@@ -63,7 +63,7 @@
         {% for g in linked %}
         <tr>
           <td>{{ g.guest_name }}</td>
-          <td>{{ g.provider|capitalize }}<br><small class="text-body-secondary">{{ g.source_key }}</small></td>
+          <td>{{ g.provider|capitalize }}<br>{% if g.url %}<a href="{{ g.url }}" target="_blank" rel="noopener noreferrer"><small>{{ g.source_key }}</small></a>{% else %}<small class="text-body-secondary">{{ g.source_key }}</small>{% endif %}</td>
           <td>{{ g.person_name }}</td>
           <td>
             <form method="post" action="/admin/review/unlink">
@@ -96,7 +96,7 @@
           {% for g in found %}
           <tr>
             <td>{{ g.guest_name }}</td>
-            <td>{{ g.provider|capitalize }}<br><small class="text-body-secondary">{{ g.source_key }}</small></td>
+            <td>{{ g.provider|capitalize }}<br>{% if g.url %}<a href="{{ g.url }}" target="_blank" rel="noopener noreferrer"><small>{{ g.source_key }}</small></a>{% else %}<small class="text-body-secondary">{{ g.source_key }}</small>{% endif %}</td>
             <td>{{ g.person_name or "Nobody" }}</td>
             <td>
               <form method="post" action="/admin/review/confirm" class="input-group input-group-sm">

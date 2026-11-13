@@ -439,3 +439,20 @@ def parse_person_link(text: str) -> PersonPage | None:
     if len(slug) > _MAX_SLUG or not _PERSON_SLUG.fullmatch(slug):
         return None
     return PersonPage(slug=slug, url=f"https://{HOST}{PERSON_PATH}{slug}")
+
+
+def person_url(slug: str) -> str | None:
+    """Give the address of a person's Rostercon page, from the name part of it.
+
+    The address is built here, never taken from imported data, and only for a plain
+    name, so what is stored can be shown as a link without trusting it.
+
+    Args:
+        slug: The name part of the address, such as ``paul-mcgann-en``.
+
+    Returns:
+        The page, or ``None`` if ``slug`` is not a plain name.
+    """
+    if len(slug) > _MAX_SLUG or not _PERSON_SLUG.fullmatch(slug):
+        return None
+    return f"https://{HOST}{PERSON_PATH}{slug}"

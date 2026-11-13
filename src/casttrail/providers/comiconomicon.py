@@ -15,6 +15,7 @@ from casttrail.providers.base import (
 )
 
 PROVIDER_ID = "comiconomicon"
+_MAX_ID_DIGITS = 9
 HOST = "comiconomicon.com"
 BASE = f"https://{HOST}"
 
@@ -559,3 +560,20 @@ def parse_guest_link(text: str) -> LinkTarget | None:
     if found is None:
         return None
     return LinkTarget(key=found[0], url=f"{BASE}{found[1]}")
+
+
+def guest_url(key: str) -> str | None:
+    """Give the address of a guest's Comiconomicon page, from the guest's number.
+
+    The address is built here, never taken from imported data, and only for a plain
+    number, so what is stored can be shown as a link without trusting it.
+
+    Args:
+        key: The guest's number, such as ``518``.
+
+    Returns:
+        The page, or ``None`` if ``key`` is not a plain number.
+    """
+    if not (key.isascii() and key.isdigit() and len(key) <= _MAX_ID_DIGITS):
+        return None
+    return f"{BASE}/guest/{key}"

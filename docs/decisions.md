@@ -453,3 +453,9 @@ The app is meant to run in Docker. Files: `Dockerfile`, `compose.yaml`, `.docker
 - **Fix:** the one helper that reads text from that JSON now decodes entities, once. The result is still plain text, shown escaped by the templates, so `&lt;b&gt;` becomes the characters `<b>` and not markup. A value that is only whitespace entities becomes empty, as before.
 - **Existing rows heal themselves.** The store takes a name from the leading source on every fetch, and the content hash covers the parsed text, so the next fetch of an affected event replaces the stored name (tested). On the live data two events and their source names were affected (`Echoes of Ice &#038; Fire`, `For the Love of Time &#038; Space (2027)`); no guest names were. Nothing needs migrating.
 
+## A15: source links on the review page (2026-11-13)
+
+- **Why (project owner):** a reviewer confirming that a guest is a watched person has to see the guest on the source, not just a name and an id.
+- **What:** each row on **Review guests** (waiting, linked and search results) links the guest's id to its page: `https://www.rostercon.com/en/people/<name>` or `https://comiconomicon.com/guest/<number>`. The links open in a new tab with `noopener noreferrer`.
+- **The address is built, not stored.** It is made from the source and the guest's key (`page_url_for`, which asks that source's own builder: `person_url` for Rostercon, `guest_url` for Comiconomicon), and only when the key is a plain one (a lower-case name with hyphens, or a number of up to 9 ASCII digits). A key that is not plain, or a source we do not link to (TMDB, IMDb), is shown as text with no link, so imported data can never put an address on the page.
+- **Checked against the live site (2026-11-13, two single requests, honest user agent):** `comiconomicon.com/guest/518` and `/guest/518/Andrew_Jackson` both answer 200, so the number alone is enough. Rostercon's `/en/people/<name>` is the form the refresh already fetches.

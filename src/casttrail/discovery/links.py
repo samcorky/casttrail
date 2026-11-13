@@ -38,6 +38,8 @@ class LinkSource:
     label: str
     example: str
     parse: Callable[[str], LinkTarget | None]
+    # The address of the page with this key, or None if the key is not a plain one.
+    page_url: Callable[[str], str | None]
 
 
 def _parse_rostercon(text: str) -> LinkTarget | None:
@@ -50,12 +52,14 @@ ROSTERCON = LinkSource(
     label="Rostercon",
     example="https://www.rostercon.com/en/people/tom-wilson-en",
     parse=_parse_rostercon,
+    page_url=rostercon.person_url,
 )
 COMICONOMICON = LinkSource(
     provider=comiconomicon.PROVIDER_ID,
     label="Comiconomicon",
     example="https://comiconomicon.com/guest/518/Andrew_Jackson",
     parse=comiconomicon.parse_guest_link,
+    page_url=comiconomicon.guest_url,
 )
 SOURCES = (ROSTERCON, COMICONOMICON)
 
@@ -70,6 +74,21 @@ def source_by_provider(provider: str) -> LinkSource | None:
         The source, or ``None`` if there is no such source.
     """
     return next((s for s in SOURCES if s.provider == provider), None)
+
+
+def page_url_for(provider: str, key: str) -> str | None:
+    """Give the address of a guest's page on a source, to show as a link.
+
+    Args:
+        provider: The source's provider id.
+        key: The source's own id for the guest.
+
+    Returns:
+        The address, or ``None`` if the source is not one we link to or the key is not
+        a plain one for it.
+    """
+    source = source_by_provider(provider)
+    return source.page_url(key) if source is not None else None
 
 
 class InvalidLinkError(ValueError):
