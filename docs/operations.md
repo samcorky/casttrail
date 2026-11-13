@@ -122,5 +122,5 @@ Each line is an event name plus key-values, for example
   and the error) and `refresh_finished` (with the counts).
 - Sign-ins, password changes, account changes, identity decisions, merges and watches
   are logged at `info`/`warning` as an audit trail, by `user_id`.
-- Outside calls log the path only (`rostercon_request`, `tmdb_request`), never the search
+- Outside calls log the path only (`source_request` with `source=rostercon`, `tmdb_request`), never the search
   terms or token. Set `CASTTRAIL_LOG_LEVEL=DEBUG` for per-page detail.
