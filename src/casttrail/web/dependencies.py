@@ -10,7 +10,6 @@ from casttrail.auth.models import User
 from casttrail.auth.service import AuthService
 from casttrail.auth.throttle import ThrottlePolicy
 from casttrail.config import Settings
-from casttrail.discovery.links import RosterconLinks
 from casttrail.discovery.merging import MergeService
 from casttrail.identity.decisions import DecisionService
 from casttrail.matching.service import MatchService
@@ -239,18 +238,3 @@ def get_merge_service(session: SessionDep) -> MergeService:
 
 
 MergeServiceDep = Annotated[MergeService, Depends(get_merge_service)]
-
-
-def get_rostercon_links(session: SessionDep) -> RosterconLinks:
-    """Build the Rostercon links service for a request.
-
-    Args:
-        session: The request's database session.
-
-    Returns:
-        A links service bound to the session.
-    """
-    return RosterconLinks(session)
-
-
-RosterconLinksDep = Annotated[RosterconLinks, Depends(get_rostercon_links)]

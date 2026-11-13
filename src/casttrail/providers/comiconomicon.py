@@ -4,10 +4,12 @@ import unicodedata
 from dataclasses import dataclass
 from datetime import date
 from html.parser import HTMLParser
+from urllib.parse import urlsplit
 
 from casttrail.providers.base import (
     ConventionInfo,
     GuestObservation,
+    LinkTarget,
     ListingResult,
     ProviderError,
 )
@@ -525,3 +527,35 @@ def match_by_name(
         and _plain(item.name) == wanted
         and (year is None or item.year == year)
     ]
+
+
+def parse_guest_link(text: str) -> LinkTarget | None:
+    """Read a Comiconomicon guest page address that someone pasted in.
+
+    Only an ``https`` address on Comiconomicon's own host, for ``/guest/<number>`` with
+    an optional plain name after it, is accepted. The result is rebuilt from the checked
+    path, so nothing else in what was pasted (a query, a fragment, another host) can
+    reach a request.
+
+    Args:
+        text: What was pasted. Surrounding spaces are ignored.
+
+    Returns:
+        The page, or ``None`` if this is not the address of one guest's page.
+    """
+    try:
+        parts = urlsplit(text.strip())
+        host, port = parts.hostname, parts.port
+    except ValueError:
+        return None
+    if (
+        parts.scheme != "https"
+        or host not in (HOST, f"www.{HOST}")
+        or parts.username is not None
+        or port is not None
+    ):
+        return None
+    found = _path_id(parts.path, _GUEST_PATH)
+    if found is None:
+        return None
+    return LinkTarget(key=found[0], url=f"{BASE}{found[1]}")

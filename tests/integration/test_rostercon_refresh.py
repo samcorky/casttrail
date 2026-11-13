@@ -12,7 +12,7 @@ from sqlalchemy import func, select
 from casttrail.auth.service import AuthService
 from casttrail.catalogue.models import Person
 from casttrail.discovery import refresh as refresh_module
-from casttrail.discovery.links import RosterconLinks
+from casttrail.discovery.links import ROSTERCON, SourceLinks
 from casttrail.discovery.models import (
     Appearance,
     AppearanceSource,
@@ -823,7 +823,7 @@ async def test_a_page_linked_by_hand_is_used_instead_of_guessing_from_the_name(
     db_session: AsyncSession, server: FakeRostercon, users: tuple[User, User]
 ) -> None:
     await _watch(db_session, users[0], "Thomas F. Wilson")
-    await RosterconLinks(db_session).link(
+    await SourceLinks(db_session, ROSTERCON).link(
         await _person_id(db_session, "Thomas F. Wilson"), PAUL_PAGE
     )
 
@@ -841,7 +841,7 @@ async def test_a_page_linked_by_hand_that_is_gone_fails_that_person_and_is_kept(
 ) -> None:
     await _watch(db_session, users[0], "Thomas F. Wilson")
     person_id = await _person_id(db_session, "Thomas F. Wilson")
-    await RosterconLinks(db_session).link(person_id, PAUL_PAGE)
+    await SourceLinks(db_session, ROSTERCON).link(person_id, PAUL_PAGE)
     del server.pages[PAUL_URL]
 
     report = await _refresh(db_session, server).run()
@@ -850,14 +850,14 @@ async def test_a_page_linked_by_hand_that_is_gone_fails_that_person_and_is_kept(
     assert (report.people_failed, report.people_unmatched) == (1, 0)
     # It did not fall back to guessing, and the link is still there to be fixed.
     assert server.requests == [PAUL_URL]
-    assert await RosterconLinks(db_session).manual(person_id) is not None
+    assert await SourceLinks(db_session, ROSTERCON).manual(person_id) is not None
 
 
 async def test_a_refusal_on_a_page_linked_by_hand_stops_the_run(
     db_session: AsyncSession, server: FakeRostercon, users: tuple[User, User]
 ) -> None:
     await _watch(db_session, users[0], "Thomas F. Wilson")
-    await RosterconLinks(db_session).link(
+    await SourceLinks(db_session, ROSTERCON).link(
         await _person_id(db_session, "Thomas F. Wilson"), PAUL_PAGE
     )
     server.pages[PAUL_URL] = (503, "")
@@ -876,7 +876,7 @@ async def test_a_refresh_never_replaces_a_page_linked_by_hand(
     person_id = await _person_id(db_session, "Paul McGann")
     other = "https://www.rostercon.com/en/people/paul-mcgann-2-en"
     server.pages["/en/people/paul-mcgann-2-en"] = server.pages[PAUL_URL]
-    await RosterconLinks(db_session).link(person_id, other)
+    await SourceLinks(db_session, ROSTERCON).link(person_id, other)
 
     await _refresh(db_session, server).run()
     await _refresh(db_session, server).run()
@@ -1066,7 +1066,7 @@ async def test_a_page_set_by_hand_is_still_trusted_after_thirty_days(
 ) -> None:
     time_machine.move_to(REAL_NOW, tick=False)
     await _watch(db_session, users[0], "Thomas F. Wilson")
-    await RosterconLinks(db_session).link(
+    await SourceLinks(db_session, ROSTERCON).link(
         await _person_id(db_session, "Thomas F. Wilson"), PAUL_PAGE
     )
     time_machine.move_to(REAL_NOW + timedelta(days=400), tick=False)

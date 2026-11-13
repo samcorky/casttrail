@@ -11,6 +11,7 @@ import structlog
 from sqlalchemy import func, select
 
 from casttrail.catalogue.models import Person
+from casttrail.discovery.links import COMICONOMICON, SourceLinks
 from casttrail.discovery.lookup import FRESH_FOR, GuestLookup
 from casttrail.discovery.models import SourceLookup
 from casttrail.providers.base import ProviderError
@@ -377,3 +378,20 @@ async def test_a_link_set_while_the_site_is_being_asked_is_not_overwritten(
         True,
         START,
     )
+
+
+async def test_a_page_linked_through_the_admin_service_is_used_without_asking(
+    db_session: AsyncSession,
+    site: FakeComiconomicon,
+    time_machine: TimeMachineFixture,
+) -> None:
+    person_id = await _person(db_session)
+    await SourceLinks(db_session, COMICONOMICON).link(
+        person_id, "https://comiconomicon.com/guest/777/Andy_Jackson"
+    )
+    time_machine.move_to(START + timedelta(days=5000))
+
+    entry = await site.lookup().find(person_id, "Andrew Jackson")
+
+    assert (entry.source_key, entry.manual) == ("777", True)
+    assert site.requests == []

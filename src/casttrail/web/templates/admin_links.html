@@ -1,53 +1,57 @@
 {% extends "base.html" %}
-{% block title %}Rostercon pages · CastTrail{% endblock %}
+{% block title %}Source pages · CastTrail{% endblock %}
 {% block content %}
-<h1 class="mb-3">Rostercon pages</h1>
+<h1 class="mb-3">Source pages</h1>
 {% if notice %}<div class="alert {% if invalid %}alert-warning{% else %}alert-info{% endif %}" role="status"><strong>{{ notice }}</strong></div>{% endif %}
 <p class="text-body-secondary">
-  A refresh finds each watched person on Rostercon by their name. When Rostercon spells
-  a name differently (<em>Tom</em> for <em>Thomas</em>), paste the address of the
-  person's own Rostercon page here. A page set by hand is always used, and a refresh
-  never changes or removes it.
+  A refresh finds each watched person on a source by their name. When a source spells a
+  name differently (<em>Tom</em> for <em>Thomas</em>), paste the address of the
+  person's own page on that source here. A page set by hand is always used, and a
+  refresh never changes or removes it.
 </p>
-{% if attention %}
-<p><strong>{{ attention }} {{ "person has" if attention == 1 else "people have" }} no single page by name</strong> and {{ "needs" if attention == 1 else "need" }} a link.</p>
-{% endif %}
+{% for label, count in attention %}
+<p class="mb-1"><strong>{{ label }}:</strong> {{ count }} {{ "person has" if count == 1 else "people have" }} no single page by name and {{ "needs" if count == 1 else "need" }} a link.</p>
+{% endfor %}
 
 {% if people %}
-<div class="table-responsive">
+<div class="table-responsive mt-3">
   <table class="table align-middle">
-    <thead><tr><th>Person</th><th>Rostercon page</th><th>Set by hand</th></tr></thead>
+    <thead>
+      <tr><th>Person</th>{% for source in sources %}<th>{{ source.label }}</th>{% endfor %}</tr>
+    </thead>
     <tbody>
       {% for p in people %}
-      <tr{% if p.state in ("not_found", "ambiguous") %} class="table-warning"{% endif %}>
+      <tr{% if p.cells | selectattr("1.state", "in", ["not_found", "ambiguous"]) | list %} class="table-warning"{% endif %}>
         <td>{{ p.name }}</td>
+        {% for source, cell in p.cells %}
         <td>
-          {% if p.state == "manual" %}
+          {% if cell.state == "manual" %}
             <span class="badge text-bg-primary">Set by hand</span>
-          {% elif p.state == "found" %}
+          {% elif cell.state == "found" %}
             <span class="badge text-bg-success">Found by name</span>
-          {% elif p.state == "not_found" %}
+          {% elif cell.state == "not_found" %}
             <span class="badge text-bg-warning">Not found by name</span>
-          {% elif p.state == "ambiguous" %}
+          {% elif cell.state == "ambiguous" %}
             <span class="badge text-bg-warning">Several pages have this name</span>
           {% else %}
             <span class="badge text-bg-secondary">Not looked up yet</span>
           {% endif %}
-          {% if p.url %}<br><a href="{{ p.url }}" target="_blank" rel="noopener noreferrer"><small>{{ p.slug }}</small></a>{% endif %}
-        </td>
-        <td>
-          <form method="post" action="/admin/links/set" class="input-group input-group-sm">
+          {% if cell.url %}<br><a href="{{ cell.url }}" target="_blank" rel="noopener noreferrer"><small>{{ cell.key }}</small></a>{% endif %}
+          <form method="post" action="/admin/links/set" class="input-group input-group-sm mt-1">
+            <input type="hidden" name="provider" value="{{ source.provider }}">
             <input type="hidden" name="person_id" value="{{ p.person_id }}">
-            <input class="form-control" type="url" name="url" required maxlength="300" placeholder="https://www.rostercon.com/en/people/…" aria-label="Rostercon page address for {{ p.name }}">
-            <button type="submit" class="btn btn-primary">{{ "Change" if p.state == "manual" else "Link" }}</button>
+            <input class="form-control" type="url" name="url" required maxlength="300" placeholder="{{ source.example }}" aria-label="{{ source.label }} page address for {{ p.name }}">
+            <button type="submit" class="btn btn-primary">{{ "Change" if cell.state == "manual" else "Link" }}</button>
           </form>
-          {% if p.state == "manual" %}
+          {% if cell.state == "manual" %}
           <form method="post" action="/admin/links/remove" class="mt-1">
+            <input type="hidden" name="provider" value="{{ source.provider }}">
             <input type="hidden" name="person_id" value="{{ p.person_id }}">
             <button type="submit" class="btn btn-outline-secondary btn-sm">Remove link</button>
           </form>
           {% endif %}
         </td>
+        {% endfor %}
       </tr>
       {% endfor %}
     </tbody>

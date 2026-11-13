@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import date
 from typing import TYPE_CHECKING, Literal, Protocol
 
@@ -155,3 +156,11 @@ class MetadataProvider(Protocol):
     ) -> list[CastMember] | None:
         """Return the top-billed cast, or ``None`` if there is no such production."""
         ...
+
+
+@dataclass(frozen=True)
+class LinkTarget:
+    """A page on a source that a person can be linked to: its key and its address."""
+
+    key: str
+    url: str

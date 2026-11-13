@@ -44,6 +44,8 @@ def test_a_page_without_the_language_suffix_is_fine() -> None:
         "https://evilrostercon.com/en/people/tom-wilson-en",
         "https://user@www.rostercon.com/en/people/tom-wilson-en",
         "https://www.rostercon.com:8443/en/people/tom-wilson-en",
+        "https://www.rostercon.com:abc/en/people/tom-wilson-en",
+        "https://[www.rostercon.com/en/people/tom-wilson-en",
         "file:///etc/passwd",
         # Not a person's page.
         "https://www.rostercon.com/",
