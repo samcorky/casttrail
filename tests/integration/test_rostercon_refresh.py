@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 
 from casttrail.auth.service import AuthService
 from casttrail.catalogue.models import Person
-from casttrail.discovery import refresh as refresh_module
+from casttrail.discovery import source_refresh
 from casttrail.discovery.links import ROSTERCON, SourceLinks
 from casttrail.discovery.models import (
     Appearance,
@@ -386,7 +386,7 @@ async def test_soonest_events_come_first_and_the_rest_wait_for_the_next_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     await _watch(db_session, users[0])
-    monkeypatch.setattr(refresh_module, "MAX_EVENT_PAGES", 1)
+    monkeypatch.setattr(source_refresh, "MAX_EVENT_PAGES", 1)
 
     report = await _refresh(db_session, server).run()
 
@@ -627,7 +627,7 @@ async def test_events_are_taken_by_date_and_not_by_name(
         assert "Feb 13th 2027" in text
         # Now "for-the-love-of-time-space-2027" is later, but sorts first by name.
         server.pages[path] = (status, text.replace("Feb 13th 2027", "Feb 25th 2027"))
-    monkeypatch.setattr(refresh_module, "MAX_EVENT_PAGES", 1)
+    monkeypatch.setattr(source_refresh, "MAX_EVENT_PAGES", 1)
 
     await _refresh(db_session, server).run()
 

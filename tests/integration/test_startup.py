@@ -352,7 +352,7 @@ async def test_both_timers_run_side_by_side(tmp_path: Path) -> None:
     try:
         assert sorted(j.id for j in scheduler.get_jobs()) == [
             "daily-backup",
-            "rostercon-refresh",
+            "refresh",
         ]
     finally:
         scheduler.shutdown(wait=False)

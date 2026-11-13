@@ -250,7 +250,7 @@ Still open:
 - [x] 2.2 `people`, `productions`, `credits`, `external_identities` 🗄️
 - [x] 2.3 Search UI (HTMX) for people, films and series (with posters and photos)
 - [x] 2.4 `watches` + watch and unwatch, per-user isolation 🗄️ 🧪
-- [ ] 2.5 Franchises with the Bond seed and franchise watches 🗄️ 👁️ DEMO (deferred: do it alongside WP-6, when a franchise watch has alerts to drive. The Bond film list is also needed by 7.4.)
+- [ ] 2.5 Franchises with the Bond seed and franchise watches 🗄️ 👁️ DEMO (deferred: do it alongside WP-6, when a franchise watch has alerts to drive. The Bond film list is also needed by 7.4.) Idea (owner): take franchises from TMDB collections (a film's `belongs_to_collection` and the collection's list of films) instead of a hand-made seed, so the Bond films are one franchise among many. To check against the API when this starts: collections group films, not series, and a franchise can span several collections or none, so a franchise made by hand must stay possible.
 - [x] ⛔ GATE: watches survive restart, 404 on another user's watch (met by 2.4; 2.5 is deferred)
 
 ### WP-3 Event browser
@@ -284,7 +284,7 @@ Still open:
 - [ ] 5.5 Use Comiconomicon for real (added after the gate: nothing fetched it yet). The owner chose its search box, `/xhr/indexautocomplete.php`, to turn names into its ids (see `docs/decisions.md`).
   - [x] 5.5a Parse the search answers and match a name exactly 🧪
   - [x] 5.5b Polite fetcher for Comiconomicon (shared with Rostercon in `providers/polite.py`) and a cached lookup for watched people (`source_lookups`) 🗄️ 🧪
-  - [ ] 5.5c Refresh from Comiconomicon for watched people (guest pages, then event pages), as a scheduled job and a button 🧪
+  - [x] 5.5c Refresh from Comiconomicon for watched people (guest pages, then event pages), as a scheduled job and a button 🧪 (one **Refresh now** button and one daily timer run Rostercon and then Comiconomicon; each is its own run with its own lock)
   - [ ] 5.5d Watched films and series through their film pages, and health for the second source 🧪
 
 ### Added during the build (not in the original plan)
