@@ -1,3 +1,4 @@
+import asyncio
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -5,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 import httpx2
 import pytest
+import structlog
 from sqlalchemy import func, select
 
 from casttrail.auth.service import AuthService
@@ -32,6 +34,7 @@ from casttrail.watching.service import WatchService
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
+    from time_machine import TimeMachineFixture
 
     from casttrail.auth.models import User
 
@@ -923,3 +926,187 @@ async def test_a_lookup_that_errors_is_not_remembered_as_not_found(
     await _refresh(db_session, server).run()
 
     assert await _lookups(db_session) == []
+
+
+# --- pages already known are not looked up again ------------------------------------
+
+REAL_NOW = datetime(2026, 11, 13, 12, 0, tzinfo=UTC)
+PAUL_PROBES = ["/en/people/paul-mcgann-2-en", "/en/people/paul-mcgann-2"]
+
+
+def _people_requests(server: FakeRostercon) -> list[str]:
+    return [path for path in server.requests if path.startswith("/en/people/")]
+
+
+async def _first_run_then_clear(
+    db_session: AsyncSession,
+    server: FakeRostercon,
+    users: tuple[User, User],
+    time_machine: TimeMachineFixture,
+) -> None:
+    time_machine.move_to(REAL_NOW, tick=False)
+    await _watch(db_session, users[0])
+    await _refresh(db_session, server).run()
+    server.requests.clear()
+
+
+async def test_a_page_found_by_name_is_asked_for_directly_next_time(
+    db_session: AsyncSession,
+    server: FakeRostercon,
+    users: tuple[User, User],
+    time_machine: TimeMachineFixture,
+) -> None:
+    await _first_run_then_clear(db_session, server, users, time_machine)
+
+    report = await _refresh(db_session, server).run()
+
+    assert report is not None
+    assert (report.people_matched, report.people_failed) == (1, 0)
+    # The page and its event list: none of the probes for a second person of that name.
+    assert _people_requests(server) == [PAUL_URL, EVENTS_URL]
+
+
+@pytest.mark.parametrize(("days", "reused"), [(29, True), (30, False), (31, False)])
+async def test_a_found_page_is_trusted_for_thirty_days_and_then_looked_up_again(
+    db_session: AsyncSession,
+    server: FakeRostercon,
+    users: tuple[User, User],
+    time_machine: TimeMachineFixture,
+    days: int,
+    reused: bool,
+) -> None:
+    await _first_run_then_clear(db_session, server, users, time_machine)
+    time_machine.move_to(REAL_NOW + timedelta(days=days), tick=False)
+
+    await _refresh(db_session, server).run()
+
+    probes = [p for p in _people_requests(server) if p in PAUL_PROBES]
+    assert (probes == []) is reused
+    [row] = await _lookups(db_session)
+    assert row.looked_up_at == (REAL_NOW if reused else REAL_NOW + timedelta(days=days))
+
+
+async def test_a_page_that_has_moved_is_found_again_by_name(
+    db_session: AsyncSession,
+    server: FakeRostercon,
+    users: tuple[User, User],
+    time_machine: TimeMachineFixture,
+) -> None:
+    await _first_run_then_clear(db_session, server, users, time_machine)
+    server.pages["/en/people/paul-mcgann"] = server.pages.pop(PAUL_URL)
+
+    report = await _refresh(db_session, server).run()
+
+    assert report is not None
+    assert (report.people_matched, report.people_failed) == (1, 0)
+    assert PAUL_URL in server.requests
+    [row] = await _lookups(db_session)
+    assert (row.outcome, row.source_key, row.manual) == (
+        "found",
+        "paul-mcgann",
+        False,
+    )
+
+
+async def test_a_known_page_that_errors_fails_the_person_and_is_kept(
+    db_session: AsyncSession,
+    server: FakeRostercon,
+    users: tuple[User, User],
+    time_machine: TimeMachineFixture,
+) -> None:
+    await _first_run_then_clear(db_session, server, users, time_machine)
+    server.pages[PAUL_URL] = (500, "")
+
+    report = await _refresh(db_session, server).run()
+
+    assert report is not None
+    assert (report.people_failed, report.people_unmatched) == (1, 0)
+    assert server.requests == [PAUL_URL]
+    [row] = await _lookups(db_session)
+    assert (row.outcome, row.source_key) == ("found", "paul-mcgann-en")
+
+
+async def test_a_refusal_on_a_known_page_stops_the_run(
+    db_session: AsyncSession,
+    server: FakeRostercon,
+    users: tuple[User, User],
+    time_machine: TimeMachineFixture,
+) -> None:
+    await _first_run_then_clear(db_session, server, users, time_machine)
+    server.pages[PAUL_URL] = (503, "")
+
+    report = await _refresh(db_session, server).run()
+
+    assert report is not None
+    assert report.stopped == "Rostercon asked us to wait"
+    assert server.requests == [PAUL_URL]
+
+
+async def test_a_person_not_found_is_looked_up_again_every_run(
+    db_session: AsyncSession,
+    server: FakeRostercon,
+    users: tuple[User, User],
+    time_machine: TimeMachineFixture,
+) -> None:
+    time_machine.move_to(REAL_NOW, tick=False)
+    await _watch(db_session, users[0], "Zed Nobody")
+    await _refresh(db_session, server).run()
+    server.requests.clear()
+
+    await _refresh(db_session, server).run()
+
+    assert len(server.requests) == 4
+
+
+async def test_a_page_set_by_hand_is_still_trusted_after_thirty_days(
+    db_session: AsyncSession,
+    server: FakeRostercon,
+    users: tuple[User, User],
+    time_machine: TimeMachineFixture,
+) -> None:
+    time_machine.move_to(REAL_NOW, tick=False)
+    await _watch(db_session, users[0], "Thomas F. Wilson")
+    await RosterconLinks(db_session).link(
+        await _person_id(db_session, "Thomas F. Wilson"), PAUL_PAGE
+    )
+    time_machine.move_to(REAL_NOW + timedelta(days=400), tick=False)
+
+    report = await _refresh(db_session, server).run()
+
+    assert report is not None
+    assert report.people_matched == 1
+    assert _people_requests(server) == [PAUL_URL, EVENTS_URL]
+
+
+# --- stopping the app is not a crash ------------------------------------------------
+
+
+async def test_stopping_the_app_mid_refresh_is_recorded_as_an_interruption(
+    db_session: AsyncSession, server: FakeRostercon, users: tuple[User, User]
+) -> None:
+    await _watch(db_session, users[0])
+    asked = asyncio.Event()
+
+    async def never_answers(request: httpx2.Request) -> httpx2.Response:
+        asked.set()
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")
+
+    client = create_client(transport=httpx2.MockTransport(never_answers))
+    fetcher = RosterconFetcher(client, min_interval=0, sleep=_no_sleep)
+    task = asyncio.create_task(RosterconRefresh(db_session, fetcher, now=Clock()).run())
+    await asked.wait()
+
+    with structlog.testing.capture_logs() as events:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    run = await _only_run(db_session)
+    assert run.status == "failed"
+    assert json.loads(run.summary or "{}")["stopped"] == "Interrupted: the app stopped"
+    names = [e["event"] for e in events]
+    assert "refresh_interrupted" in names
+    assert "refresh_crashed" not in names
+    # The lock is free, so the next run is not turned away.
+    assert await _refresh(db_session, server).run() is not None
