@@ -446,6 +446,13 @@ The app is meant to run in Docker. Files: `Dockerfile`, `compose.yaml`, `.docker
 - **The daily timer** job id is `refresh` (it was `rostercon-refresh`). The **Refresh** page lists runs of both sources with a Source column.
 - **Not done:** Comiconomicon's health on the Source health page (plan 5.5d, with watched films and series). Every event on a guest's page is fetched, up to the 60 pages a run allows, soonest first; a UK-only filter is not safe because the site gives a country only when the location line ends with one (see WP-5.1). A cut-off run still starts again from the first person (plan A13).
 
+## Rostercon names with undecoded entities (2026-11-13)
+
+- **Found by the project owner** on the live site: an event shown as `For the Love of Time &#038; Space (2027)`.
+- **Cause:** WordPress writes `&` as `&#038;` (and `'` as `&#8217;`) inside the page's JSON data. A JSON parser leaves those as they are, and an HTML parser never sees them because they sit in a script block, so nothing decoded them. Names read from the page's visible HTML were already decoded; the event name, venue, city, region, organiser and guest names (all read from the JSON) were not.
+- **Fix:** the one helper that reads text from that JSON now decodes entities, once. The result is still plain text, shown escaped by the templates, so `&lt;b&gt;` becomes the characters `<b>` and not markup. A value that is only whitespace entities becomes empty, as before.
+- **Existing rows heal themselves.** The store takes a name from the leading source on every fetch, and the content hash covers the parsed text, so the next fetch of an affected event replaces the stored name (tested). On the live data two events and their source names were affected (`Echoes of Ice &#038; Fire`, `For the Love of Time &#038; Space (2027)`); no guest names were. Nothing needs migrating.
+
 ## A15: source links on the review page (2026-11-13)
 
 - **Why (project owner):** a reviewer confirming that a guest is a watched person has to see the guest on the source, not just a name and an id.

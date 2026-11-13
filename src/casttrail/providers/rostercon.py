@@ -1,3 +1,4 @@
+import html
 import json
 import re
 import unicodedata
@@ -93,7 +94,15 @@ def _is_event(node: dict[str, Any]) -> bool:
 
 
 def _text(value: object) -> str | None:
-    return value.strip() or None if isinstance(value, str) else None
+    """Read a text value from the page's JSON data, with its HTML entities decoded.
+
+    WordPress writes ``&`` as ``&#038;`` and ``'`` as ``&#8217;`` even inside the JSON,
+    where an HTML parser does not decode them. They are decoded here, once, and the
+    result is still only text: it is shown escaped, never as markup.
+    """
+    if not isinstance(value, str):
+        return None
+    return html.unescape(value).strip() or None
 
 
 def _day(value: object) -> date | None:
