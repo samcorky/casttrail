@@ -9,7 +9,7 @@ from casttrail.discovery.refresh import JOB, RefreshReport, RosterconRefresh
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-    from casttrail.providers.rostercon_client import PeopleIndex, RosterconFetcher
+    from casttrail.providers.rostercon_client import RosterconFetcher
 
 logger = structlog.get_logger(__name__)
 
@@ -25,26 +25,23 @@ class Refresher(Protocol):
 class RefreshJob:
     """A refresh with its own database session, for a timer or a button to call.
 
-    The fetcher and people index are kept between runs, so Rostercon's spacing and the
-    cached index carry over from one run to the next.
+    The fetcher is kept between runs, so Rostercon's spacing and cooldown carry over
+    from one run to the next.
     """
 
     def __init__(
         self,
         session_factory: async_sessionmaker[AsyncSession],
         fetcher: RosterconFetcher,
-        index: PeopleIndex,
     ) -> None:
         """Create the job.
 
         Args:
             session_factory: Opens a database session for each run.
             fetcher: Fetches Rostercon pages politely.
-            index: Rostercon's list of person pages.
         """
         self._session_factory = session_factory
         self._fetcher = fetcher
-        self._index = index
 
     async def run(self) -> RefreshReport | None:
         """Run one refresh.
@@ -53,7 +50,7 @@ class RefreshJob:
             What was done, or ``None`` if a refresh was already running.
         """
         async with self._session_factory() as session:
-            return await RosterconRefresh(session, self._fetcher, self._index).run()
+            return await RosterconRefresh(session, self._fetcher).run()
 
 
 async def run_in_background(job: Refresher) -> None:

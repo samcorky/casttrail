@@ -258,8 +258,8 @@ Still open:
 - [x] 3.2 Convention, source, observation and appearance tables 🗄️ (`job_runs` is created with 3.4)
 - [x] 3.3 Discovery service: idempotent upsert, provenance, prune observations 🧪
 - [x] 3.4 Targeted refresh of what people watch (split into four chunks below). Rostercon is fetched per watched person, not swept in full.
-  - [x] 3.4a Parsers for event rows, a person's full-events link and the people sitemap, and name matching 🧪
-  - [x] 3.4b Polite fetch client: spacing, backoff on 429 and 503, cached sitemap 🧪
+  - [x] 3.4a Parsers for event rows and a person's full-events link, and name slugs 🧪
+  - [x] 3.4b Polite fetch client: spacing, backoff on 429 and 503, and finding a person by asking for their page 🧪
   - [x] 3.4c `job_runs`, non-overlapping lock, and the refresh for watched people 🗄️ 🧪
   - [x] 3.4d Scheduler (daily) and an admin-only manual refresh
 - [x] 3.5 UK events and guests pages, unknowns shown as unknown 👁️ DEMO

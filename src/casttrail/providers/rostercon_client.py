@@ -10,7 +10,7 @@ import structlog
 
 from casttrail import get_version
 from casttrail.providers.base import ProviderError
-from casttrail.providers.rostercon import HOST, PersonPage, parse_people_sitemap
+from casttrail.providers.rostercon import HOST, PERSON_PATH, PersonPage, slugify_name
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -23,10 +23,9 @@ MIN_INTERVAL = 10.0
 MAX_COOLDOWN = 3600.0
 MAX_BODY_BYTES = 5_000_000
 
-SITEMAP_URL = "https://www.rostercon.com/acteurs-sitemap{number}.xml"
-# The first file has no number; the rest are numbered from 2. There are 7 today.
-_MAX_SITEMAP_FILES = 20
-_INDEX_LIFETIME = timedelta(days=14)
+# Most people share a name with nobody; this stops a page that answers every address
+# from keeping us probing.
+_MAX_SAME_NAME = 5
 
 
 def _ms(started: float) -> float:
@@ -194,7 +193,7 @@ class RosterconFetcher:
             )
             raise ProviderError("Rostercon could not be reached.") from error
         except RosterconNotFoundError as error:
-            # Expected at the end of the sitemap, so not worth a warning.
+            # Expected whenever a name is not on Rostercon, so not worth a warning.
             logger.info("rostercon_not_found", path=path, duration_ms=_ms(started))
             raise error
         except ProviderError as error:
@@ -244,68 +243,56 @@ class RosterconFetcher:
         )
 
 
-class PeopleIndex:
-    """Every English person page on Rostercon, kept for a while after it is fetched.
+@dataclass(frozen=True)
+class FoundPerson:
+    """A Rostercon person page that exists, with the page as it was fetched."""
 
-    The index is about 8 requests, so it is fetched rarely. If a refusal stops it part
-    way, the files already read are kept and the next call carries on from there.
+    page: PersonPage
+    text: str
+
+
+async def find_people(fetcher: RosterconFetcher, name: str) -> list[FoundPerson]:
+    """Look a name up on Rostercon by asking for the page it would have.
+
+    Rostercon's person pages are ``/en/people/<name-as-words>``, sometimes ending in
+    ``-en``, and a second person with the same name gets ``-2``, a third ``-3``. Each
+    candidate is asked for directly, so nothing needs listing first. For each number the
+    first form that exists is used. Counting stops at the first number with no page.
+
+    Args:
+        fetcher: Fetches Rostercon pages politely.
+        name: The person's name as TMDB gives it.
+
+    Returns:
+        The pages that exist: none if Rostercon does not know the name, one if it is
+        clear, several if the name is ambiguous and the caller must not pick.
+
+    Raises:
+        ProviderError: Rostercon could not be read. A page that is simply missing is
+            not an error.
     """
+    base = slugify_name(name)
+    if not base:
+        return []
+    found: list[FoundPerson] = []
+    for number in range(1, _MAX_SAME_NAME + 1):
+        stem = base if number == 1 else f"{base}-{number}"
+        hit = await _first_page(fetcher, (f"{stem}-en", stem))
+        if hit is not None:
+            found.append(hit)
+        elif number > 1:
+            break
+    return found
 
-    def __init__(
-        self,
-        fetcher: RosterconFetcher,
-        *,
-        lifetime: timedelta = _INDEX_LIFETIME,
-        clock: Callable[[], float] = time.monotonic,
-    ) -> None:
-        """Create the index.
 
-        Args:
-            fetcher: Where the sitemap files come from.
-            lifetime: How long a complete index is used before it is fetched again.
-            clock: A monotonic clock, replaceable in tests.
-        """
-        self._fetcher = fetcher
-        self._lifetime = lifetime
-        self._clock = clock
-        self._files: dict[int, list[PersonPage]] = {}
-        self._complete_at: float | None = None
-
-    async def people(self) -> list[PersonPage]:
-        """Return every known person page, fetching the sitemap if it is out of date.
-
-        Returns:
-            The people in the sitemap, each once.
-
-        Raises:
-            ProviderError: A file could not be fetched or held no one. The files read
-                so far are kept.
-        """
-        if self._complete_at is not None:
-            if self._clock() - self._complete_at < self._lifetime.total_seconds():
-                return self._merged()
-            self._files = {}
-            self._complete_at = None
-        for number in range(1, _MAX_SITEMAP_FILES + 1):
-            if number in self._files:
-                continue
-            suffix = "" if number == 1 else str(number)
-            try:
-                page = await self._fetcher.get(SITEMAP_URL.format(number=suffix))
-            except RosterconNotFoundError:
-                if number == 1:
-                    raise
-                break
-            found = parse_people_sitemap(page.text)
-            if not found:
-                raise ProviderError("A Rostercon people sitemap held no one.")
-            self._files[number] = found
-        self._complete_at = self._clock()
-        return self._merged()
-
-    def _merged(self) -> list[PersonPage]:
-        people: dict[str, PersonPage] = {}
-        for number in sorted(self._files):
-            for person in self._files[number]:
-                people.setdefault(person.slug, person)
-        return list(people.values())
+async def _first_page(
+    fetcher: RosterconFetcher, slugs: tuple[str, ...]
+) -> FoundPerson | None:
+    for slug in slugs:
+        url = f"https://{HOST}{PERSON_PATH}{slug}"
+        try:
+            page = await fetcher.get(url)
+        except RosterconNotFoundError:
+            continue
+        return FoundPerson(PersonPage(slug=slug, url=url), page.text)
+    return None

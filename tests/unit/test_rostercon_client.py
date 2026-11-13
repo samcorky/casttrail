@@ -9,11 +9,11 @@ from casttrail.providers.base import ProviderError
 from casttrail.providers.rostercon_client import (
     MAX_BODY_BYTES,
     MAX_COOLDOWN,
-    PeopleIndex,
     RosterconFetcher,
     RosterconNotFoundError,
     RosterconUnavailableError,
     create_client,
+    find_people,
 )
 
 if TYPE_CHECKING:
@@ -324,166 +324,143 @@ async def test_a_page_of_exactly_the_limit_is_accepted(world: World) -> None:
     assert len(page.text) == MAX_BODY_BYTES
 
 
-# --- the people index ------------------------------------------------------------
+# --- looking a person up ---------------------------------------------------------
 
-_SITEMAP = (FIXTURES / "sitemap_people_sample.xml").read_text(encoding="utf-8")
-
-
-def _sitemap_with(*slugs: str) -> str:
-    return "".join(
-        f"<loc>https://www.rostercon.com/en/people/{slug}</loc>" for slug in slugs
-    )
+PEOPLE = "https://www.rostercon.com/en/people/"
 
 
-def _serve_sitemaps(world: World, files: dict[str, str]) -> None:
+def _serve_people(world: World, slugs: set[str]) -> None:
     def handler(request: httpx2.Request) -> httpx2.Response:
         world.requests.append(request)
-        name = request.url.path.removeprefix("/")
-        if name in files:
-            return httpx2.Response(200, text=files[name])
+        slug = request.url.path.removeprefix("/en/people/")
+        if slug in slugs:
+            return httpx2.Response(200, text=f"<html>{slug}</html>")
         return httpx2.Response(404)
 
     world.handler = handler  # type: ignore[method-assign]
 
 
-def _index(world: World, lifetime: timedelta = timedelta(days=14)) -> PeopleIndex:
-    return PeopleIndex(world.fetcher(10.0), lifetime=lifetime, clock=world.clock)
+def _paths(world: World) -> list[str]:
+    return [request.url.path.removeprefix("/en/people/") for request in world.requests]
 
 
-async def test_the_index_reads_files_until_one_is_missing(world: World) -> None:
-    _serve_sitemaps(
-        world,
-        {
-            "acteurs-sitemap.xml": _sitemap_with("a-en"),
-            "acteurs-sitemap2.xml": _sitemap_with("b-en"),
-            "acteurs-sitemap3.xml": _sitemap_with("c-en"),
-        },
-    )
+async def test_a_person_with_one_page_is_found_with_one_request_and_its_text(
+    world: World,
+) -> None:
+    _serve_people(world, {"paul-mcgann-en"})
 
-    people = await _index(world).people()
+    found = await find_people(world.fetcher(), "Paul McGann")
 
-    assert [person.slug for person in people] == ["a-en", "b-en", "c-en"]
-    assert [r.url.path for r in world.requests] == [
-        "/acteurs-sitemap.xml",
-        "/acteurs-sitemap2.xml",
-        "/acteurs-sitemap3.xml",
-        "/acteurs-sitemap4.xml",
+    assert [f.page.slug for f in found] == ["paul-mcgann-en"]
+    assert found[0].page.url == f"{PEOPLE}paul-mcgann-en"
+    assert found[0].text == "<html>paul-mcgann-en</html>"
+    # The second person is looked for too, and not found.
+    assert _paths(world) == ["paul-mcgann-en", "paul-mcgann-2-en", "paul-mcgann-2"]
+
+
+async def test_the_form_without_en_is_used_when_that_is_all_there_is(
+    world: World,
+) -> None:
+    _serve_people(world, {"a-l-katz"})
+
+    found = await find_people(world.fetcher(), "A. L. Katz")
+
+    assert [f.page.slug for f in found] == ["a-l-katz"]
+
+
+async def test_the_en_form_wins_when_both_exist_so_one_person_is_not_two(
+    world: World,
+) -> None:
+    _serve_people(world, {"x-y-en", "x-y"})
+
+    found = await find_people(world.fetcher(), "X Y")
+
+    assert [f.page.slug for f in found] == ["x-y-en"]
+
+
+async def test_nobody_is_found_for_a_name_rostercon_does_not_have(
+    world: World,
+) -> None:
+    _serve_people(world, set())
+
+    assert await find_people(world.fetcher(), "Zed Nobody") == []
+    assert _paths(world) == [
+        "zed-nobody-en",
+        "zed-nobody",
+        "zed-nobody-2-en",
+        "zed-nobody-2",
     ]
 
 
-async def test_the_real_sample_fixture_yields_people(world: World) -> None:
-    _serve_sitemaps(world, {"acteurs-sitemap.xml": _SITEMAP})
-
-    people = await _index(world).people()
-
-    assert len(people) > 5
-
-
-async def test_a_person_in_two_files_is_listed_once(world: World) -> None:
-    _serve_sitemaps(
-        world,
-        {
-            "acteurs-sitemap.xml": _sitemap_with("a-en", "b-en"),
-            "acteurs-sitemap2.xml": _sitemap_with("b-en", "c-en"),
-        },
-    )
-
-    people = await _index(world).people()
-
-    assert [person.slug for person in people] == ["a-en", "b-en", "c-en"]
-
-
-async def test_a_missing_first_file_is_an_error(world: World) -> None:
-    _serve_sitemaps(world, {})
-
-    with pytest.raises(RosterconNotFoundError):
-        await _index(world).people()
-
-
-async def test_a_file_with_no_people_is_an_error_and_is_not_cached(
+async def test_two_people_with_one_name_are_both_found_so_the_caller_can_refuse(
     world: World,
 ) -> None:
-    _serve_sitemaps(world, {"acteurs-sitemap.xml": "<urlset></urlset>"})
-    index = _index(world)
+    _serve_people(world, {"john-smith-en", "john-smith-2-en"})
 
-    with pytest.raises(ProviderError, match="no one"):
-        await index.people()
-    with pytest.raises(ProviderError, match="no one"):
-        await index.people()
+    found = await find_people(world.fetcher(), "John Smith")
 
-    assert len(world.requests) == 2
+    assert [f.page.slug for f in found] == ["john-smith-en", "john-smith-2-en"]
 
 
-async def test_a_complete_index_is_reused_until_it_expires(world: World) -> None:
-    _serve_sitemaps(world, {"acteurs-sitemap.xml": _sitemap_with("a-en")})
-    index = _index(world, timedelta(days=14))
-    await index.people()
-    count = len(world.requests)
+async def test_a_second_person_is_found_even_without_a_first(world: World) -> None:
+    _serve_people(world, {"john-smith-2-en"})
 
-    world.now += timedelta(days=14).total_seconds() - 1
-    await index.people()
-    assert len(world.requests) == count
+    found = await find_people(world.fetcher(), "John Smith")
 
-    world.now += 1
-    await index.people()
-    assert len(world.requests) > count
+    assert [f.page.slug for f in found] == ["john-smith-2-en"]
 
 
-async def test_an_expired_index_is_replaced_not_added_to(world: World) -> None:
-    files = {"acteurs-sitemap.xml": _sitemap_with("a-en")}
-    _serve_sitemaps(world, files)
-    index = _index(world, timedelta(days=1))
-    await index.people()
-
-    files["acteurs-sitemap.xml"] = _sitemap_with("z-en")
-    world.now += timedelta(days=1).total_seconds()
-    people = await index.people()
-
-    assert [person.slug for person in people] == ["z-en"]
-
-
-async def test_a_refusal_part_way_keeps_the_files_already_read(world: World) -> None:
-    files = {
-        "acteurs-sitemap.xml": _sitemap_with("a-en"),
-        "acteurs-sitemap2.xml": _sitemap_with("b-en"),
-    }
-    calls = {"count": 0}
-
+async def test_a_site_that_answers_every_address_is_not_probed_for_ever(
+    world: World,
+) -> None:
     def handler(request: httpx2.Request) -> httpx2.Response:
         world.requests.append(request)
-        name = request.url.path.removeprefix("/")
-        if name == "acteurs-sitemap2.xml":
-            calls["count"] += 1
-            if calls["count"] == 1:
-                return httpx2.Response(503)
-        if name in files:
-            return httpx2.Response(200, text=files[name])
-        return httpx2.Response(404)
+        return httpx2.Response(200, text="<html></html>")
 
     world.handler = handler  # type: ignore[method-assign]
-    index = _index(world)
+
+    found = await find_people(world.fetcher(), "Anyone")
+
+    assert len(found) == 5
+    assert len(world.requests) == 5
+
+
+@pytest.mark.parametrize("name", ["", "   ", "!!!"])
+async def test_a_name_with_no_letters_asks_nothing(world: World, name: str) -> None:
+    _serve_people(world, set())
+
+    assert await find_people(world.fetcher(), name) == []
+    assert world.requests == []
+
+
+async def test_a_hostile_name_cannot_steer_the_request_elsewhere(
+    world: World,
+) -> None:
+    _serve_people(world, set())
+
+    await find_people(world.fetcher(), "../../admin?x=1#y")
+
+    assert {request.url.host for request in world.requests} == {"www.rostercon.com"}
+    assert all(
+        request.url.path.startswith("/en/people/") and not request.url.query
+        for request in world.requests
+    )
+
+
+async def test_a_refusal_while_looking_a_person_up_is_raised_not_hidden(
+    world: World,
+) -> None:
+    world.responses = [httpx2.Response(429)]
+
     with pytest.raises(RosterconUnavailableError):
-        await index.people()
-    world.now += 100
-
-    people = await index.people()
-
-    assert [person.slug for person in people] == ["a-en", "b-en"]
-    paths = [request.url.path for request in world.requests]
-    assert paths.count("/acteurs-sitemap.xml") == 1
+        await find_people(world.fetcher(), "Paul McGann")
 
 
-async def test_the_index_stops_at_a_fixed_number_of_files(world: World) -> None:
-    def handler(request: httpx2.Request) -> httpx2.Response:
-        world.requests.append(request)
-        return httpx2.Response(200, text=_sitemap_with(f"p{len(world.requests)}-en"))
+async def test_an_error_page_is_an_error_not_a_missing_person(world: World) -> None:
+    world.responses = [httpx2.Response(500)]
 
-    world.handler = handler  # type: ignore[method-assign]
-
-    people = await _index(world).people()
-
-    assert len(world.requests) == 20
-    assert len(people) == 20
+    with pytest.raises(ProviderError):
+        await find_people(world.fetcher(), "Paul McGann")
 
 
 class _Endless(httpx2.AsyncByteStream):

@@ -4,11 +4,8 @@ from pathlib import Path
 import pytest
 
 from casttrail.providers.rostercon import (
-    PersonPage,
-    match_people,
     parse_all_events_link,
     parse_event_rows,
-    parse_people_sitemap,
     slugify_name,
 )
 
@@ -232,78 +229,7 @@ def test_the_first_good_events_link_wins() -> None:
     assert link == "https://www.rostercon.com/en/people/x/events/1"
 
 
-# --- the people sitemap ---------------------------------------------------------
-
-
-def test_the_real_sitemap_gives_english_person_pages_only() -> None:
-    people = parse_people_sitemap(_fixture("sitemap_people_sample.xml"))
-
-    assert len(people) == 25
-    assert all(p.url == f"https://www.rostercon.com/en/people/{p.slug}" for p in people)
-    assert people[0] == PersonPage(
-        slug="dangerous-bob-widin-en",
-        url="https://www.rostercon.com/en/people/dangerous-bob-widin-en",
-    )
-    assert "chocolate-bomb" in {p.slug for p in people}
-
-
-def test_a_repeated_person_is_kept_once() -> None:
-    xml = "".join(
-        f"<url><loc>https://www.rostercon.com/en/people/{s}</loc></url>"
-        for s in ("a-en", "b-en", "a-en")
-    )
-
-    assert [p.slug for p in parse_people_sitemap(xml)] == ["a-en", "b-en"]
-
-
-@pytest.mark.parametrize(
-    "loc",
-    [
-        "https://www.rostercon.com/fr/star/someone",
-        "http://www.rostercon.com/en/people/someone",
-        "https://evil.example/en/people/someone",
-        "https://www.rostercon.com/en/people/",
-        "https://www.rostercon.com/en/people/a/b",
-        "not-a-url",
-    ],
-)
-def test_a_sitemap_address_that_is_not_a_person_page_is_ignored(loc: str) -> None:
-    assert parse_people_sitemap(f"<url><loc>{loc}</loc></url>") == []
-
-
-def test_a_hostile_sitemap_cannot_make_the_parser_expand_entities() -> None:
-    bomb = "".join(
-        [
-            '<?xml version="1.0"?><!DOCTYPE lolz [<!ENTITY a "aaaaaaaaaa">',
-            '<!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;">]>',
-            "<urlset><url><loc>https://www.rostercon.com/en/people/ok-en</loc></url>",
-            "<url><loc>&b;</loc></url></urlset>",
-        ]
-    )
-
-    assert [p.slug for p in parse_people_sitemap(bomb)] == ["ok-en"]
-
-
-@pytest.mark.parametrize(
-    "xml", ["", "not xml at all", "<urlset></urlset>", "<loc></loc>"]
-)
-def test_a_sitemap_with_nothing_in_it_gives_nobody(xml: str) -> None:
-    assert parse_people_sitemap(xml) == []
-
-
-def test_an_enormous_sitemap_is_cut_off_instead_of_filling_memory(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr("casttrail.providers.rostercon._MAX_SITEMAP_ENTRIES", 3)
-    xml = "".join(
-        f"<url><loc>https://www.rostercon.com/en/people/p{n}-en</loc></url>"
-        for n in range(10)
-    )
-
-    assert [p.slug for p in parse_people_sitemap(xml)] == ["p0-en", "p1-en", "p2-en"]
-
-
-# --- matching a name to a page --------------------------------------------------
+# --- turning a name into an address --------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -325,62 +251,10 @@ def test_names_are_slugged_the_way_rostercon_does(name: str, slug: str) -> None:
 @pytest.mark.parametrize("name", ["", "   ", "!!!", "…"])
 def test_a_name_with_no_letters_has_no_slug(name: str) -> None:
     assert slugify_name(name) == ""
-    assert match_people(name, [PersonPage(slug="x", url="u")]) == []
 
 
-def test_a_real_name_matches_the_real_page_with_or_without_en() -> None:
-    people = parse_people_sitemap(_fixture("sitemap_people_sample.xml"))
-
-    with_en = match_people("Dangerous Bob Widin", people)
-    without = match_people("A. L. Katz", people)
-    plain = match_people("Chocolate Bomb", people)
-
-    assert [p.slug for p in with_en] == ["dangerous-bob-widin-en"]
-    assert [p.slug for p in without] == ["a-l-katz"]
-    assert [p.slug for p in plain] == ["chocolate-bomb"]
-
-
-def test_a_name_that_is_only_part_of_a_slug_does_not_match() -> None:
-    people = parse_people_sitemap(_fixture("sitemap_people_sample.xml"))
-
-    assert match_people("50 Cent", people) == []
-    assert match_people("Bob", people) == []
-
-
-def test_a_name_with_no_page_matches_nobody() -> None:
-    people = parse_people_sitemap(_fixture("sitemap_people_sample.xml"))
-
-    assert match_people("Nobody Atall", people) == []
-
-
-def test_two_people_with_one_name_are_both_returned_so_the_caller_can_refuse() -> None:
-    # Synthetic: the real sample has no such pair.
-    people = [
-        PersonPage(slug="john-smith-en", url="u1"),
-        PersonPage(slug="john-smith-2-en", url="u2"),
-        PersonPage(slug="john-smithers-en", url="u3"),
-        PersonPage(slug="mary-john-smith-en", url="u4"),
-    ]
-
-    assert [p.slug for p in match_people("John Smith", people)] == [
-        "john-smith-en",
-        "john-smith-2-en",
-    ]
-
-
-def test_a_digit_only_difference_is_not_a_different_name() -> None:
-    people = [PersonPage(slug="agent-47", url="u"), PersonPage(slug="agent-4", url="v")]
-
-    assert [p.slug for p in match_people("Agent 47", people)] == ["agent-47"]
-
-
-def test_punctuation_in_a_name_becomes_a_hyphen_and_never_a_pattern() -> None:
-    people = [
-        PersonPage(slug="a-b", url="u"),
-        PersonPage(slug="axb", url="v"),
-        PersonPage(slug="ab", url="w"),
-    ]
-
-    assert [p.slug for p in match_people("a.b", people)] == ["a-b"]
-    assert [p.slug for p in match_people("a.*b", people)] == ["a-b"]
-    assert [p.slug for p in match_people("a|b", people)] == ["a-b"]
+@pytest.mark.parametrize(
+    "name", ["a/../b", "x?y=1", "a b#c", "http://evil.example/", "..", "a\b"]
+)
+def test_a_slug_can_never_hold_a_path_a_query_or_a_host(name: str) -> None:
+    assert set(slugify_name(name)) <= set("abcdefghijklmnopqrstuvwxyz0123456789-")
