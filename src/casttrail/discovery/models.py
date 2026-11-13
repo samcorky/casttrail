@@ -205,3 +205,36 @@ class ConventionMerge(Base):
     reason: Mapped[str] = mapped_column(String(200))
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utc_now)
     decided_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
+
+
+class SourceLookup(Base):
+    """What a source's search said about a watched person, remembered for a while.
+
+    Turning a name into a source's own id costs a request to a small site, so the answer
+    is kept and not asked for again until it is old enough to doubt (see
+    ``discovery.lookup``). ``found`` holds the source's key and address for the person;
+    ``not_found`` and ``ambiguous`` hold none, because a name that matches nobody, or
+    several people, must never be guessed at. Deleting the person deletes the row.
+    """
+
+    __tablename__ = "source_lookups"
+    __table_args__ = (
+        UniqueConstraint("provider", "person_id"),
+        CheckConstraint(
+            "outcome IN ('found', 'not_found', 'ambiguous')", name="outcome"
+        ),
+        CheckConstraint(
+            "(outcome = 'found') = (source_key IS NOT NULL AND source_url IS NOT NULL)",
+            name="found_has_a_key",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    provider: Mapped[str] = mapped_column(String(50))
+    person_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("people.id", ondelete="CASCADE")
+    )
+    outcome: Mapped[str] = mapped_column(String(9))
+    source_key: Mapped[str | None] = mapped_column(String(255))
+    source_url: Mapped[str | None] = mapped_column(String(500))
+    looked_up_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utc_now)
