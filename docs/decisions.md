@@ -425,4 +425,3 @@ The app is meant to run in Docker. Files: `Dockerfile`, `compose.yaml`, `.docker
 - **Not known, so looked up every run:** people not found or with several pages. Their lookups cost the same as before; the admin page now shows who they are (A10).
 - **Interrupted, not crashed:** cancellation (the app stopping) is recorded as "Interrupted: the app stopped", logged as a warning (`refresh_interrupted`) without a traceback, and the lock is released as before. Anything else is still "The refresh crashed" with the traceback.
 - **Not done:** a stopped run still starts again from the first person. Plan A13 covers it: look up people not refreshed for longest first, and cap the people per run, so a long list always makes progress.
-
