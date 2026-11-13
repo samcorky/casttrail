@@ -394,3 +394,39 @@ def slugify_name(name: str) -> str:
     """
     plain = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
     return re.sub(r"[^a-z0-9]+", "-", plain.lower()).strip("-")
+
+
+_PERSON_SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+_MAX_SLUG = 120
+
+
+def parse_person_link(text: str) -> PersonPage | None:
+    """Read a Rostercon person page address that someone pasted in.
+
+    Only an ``https`` address on Rostercon's own host, for ``/en/people/<name>``, is
+    accepted. The result is rebuilt from the name part, never copied, so nothing else in
+    what was pasted (a query, a fragment, a different host) can reach a request.
+
+    Args:
+        text: What was pasted. Surrounding spaces are ignored.
+
+    Returns:
+        The page, or ``None`` if this is not the address of one person's page.
+    """
+    try:
+        parts = urlsplit(text.strip())
+        host, port = parts.hostname, parts.port
+    except ValueError:
+        return None
+    if (
+        parts.scheme != "https"
+        or host not in (HOST, HOST.removeprefix("www."))
+        or parts.username is not None
+        or port is not None
+        or not parts.path.startswith(PERSON_PATH)
+    ):
+        return None
+    slug = parts.path.removeprefix(PERSON_PATH).removesuffix("/")
+    if len(slug) > _MAX_SLUG or not _PERSON_SLUG.fullmatch(slug):
+        return None
+    return PersonPage(slug=slug, url=f"https://{HOST}{PERSON_PATH}{slug}")

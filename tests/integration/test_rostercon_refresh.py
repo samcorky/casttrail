@@ -8,8 +8,16 @@ import pytest
 from sqlalchemy import func, select
 
 from casttrail.auth.service import AuthService
+from casttrail.catalogue.models import Person
 from casttrail.discovery import refresh as refresh_module
-from casttrail.discovery.models import Appearance, AppearanceSource, Convention, JobRun
+from casttrail.discovery.links import RosterconLinks
+from casttrail.discovery.models import (
+    Appearance,
+    AppearanceSource,
+    Convention,
+    JobRun,
+    SourceLookup,
+)
 from casttrail.discovery.refresh import STALE_AFTER, RosterconRefresh
 from casttrail.discovery.service import DiscoveryService
 from casttrail.identity.decisions import DecisionService
@@ -793,3 +801,125 @@ async def test_a_correction_survives_three_more_syncs_and_rematches(
 
     assert await _snapshot(db_session) == corrected
     assert await _count(db_session, Convention) == 2
+
+
+# --- links set by hand, and what a refresh remembers ---------------------------------
+
+PAUL_PAGE = "https://www.rostercon.com/en/people/paul-mcgann-en"
+
+
+async def _person_id(session: AsyncSession, name: str) -> Any:
+    return await session.scalar(select(Person.id).where(Person.name == name))
+
+
+async def _lookups(session: AsyncSession) -> list[SourceLookup]:
+    return list(await session.scalars(select(SourceLookup)))
+
+
+async def test_a_page_linked_by_hand_is_used_instead_of_guessing_from_the_name(
+    db_session: AsyncSession, server: FakeRostercon, users: tuple[User, User]
+) -> None:
+    await _watch(db_session, users[0], "Thomas F. Wilson")
+    await RosterconLinks(db_session).link(
+        await _person_id(db_session, "Thomas F. Wilson"), PAUL_PAGE
+    )
+
+    report = await _refresh(db_session, server).run()
+
+    assert report is not None
+    assert (report.people_matched, report.people_unmatched) == (1, 0)
+    assert report.events_fetched == 2
+    assert server.requests[0] == PAUL_URL
+    assert not any("thomas" in path for path in server.requests)
+
+
+async def test_a_page_linked_by_hand_that_is_gone_fails_that_person_and_is_kept(
+    db_session: AsyncSession, server: FakeRostercon, users: tuple[User, User]
+) -> None:
+    await _watch(db_session, users[0], "Thomas F. Wilson")
+    person_id = await _person_id(db_session, "Thomas F. Wilson")
+    await RosterconLinks(db_session).link(person_id, PAUL_PAGE)
+    del server.pages[PAUL_URL]
+
+    report = await _refresh(db_session, server).run()
+
+    assert report is not None
+    assert (report.people_failed, report.people_unmatched) == (1, 0)
+    # It did not fall back to guessing, and the link is still there to be fixed.
+    assert server.requests == [PAUL_URL]
+    assert await RosterconLinks(db_session).manual(person_id) is not None
+
+
+async def test_a_refusal_on_a_page_linked_by_hand_stops_the_run(
+    db_session: AsyncSession, server: FakeRostercon, users: tuple[User, User]
+) -> None:
+    await _watch(db_session, users[0], "Thomas F. Wilson")
+    await RosterconLinks(db_session).link(
+        await _person_id(db_session, "Thomas F. Wilson"), PAUL_PAGE
+    )
+    server.pages[PAUL_URL] = (503, "")
+
+    report = await _refresh(db_session, server).run()
+
+    assert report is not None
+    assert report.stopped == "Rostercon asked us to wait"
+    assert report.people_failed == 0
+
+
+async def test_a_refresh_never_replaces_a_page_linked_by_hand(
+    db_session: AsyncSession, server: FakeRostercon, users: tuple[User, User]
+) -> None:
+    await _watch(db_session, users[0])
+    person_id = await _person_id(db_session, "Paul McGann")
+    other = "https://www.rostercon.com/en/people/paul-mcgann-2-en"
+    server.pages["/en/people/paul-mcgann-2-en"] = server.pages[PAUL_URL]
+    await RosterconLinks(db_session).link(person_id, other)
+
+    await _refresh(db_session, server).run()
+    await _refresh(db_session, server).run()
+
+    [row] = await _lookups(db_session)
+    assert (row.manual, row.source_key) == (True, "paul-mcgann-2-en")
+
+
+async def test_a_refresh_remembers_the_page_it_found_by_name(
+    db_session: AsyncSession, server: FakeRostercon, users: tuple[User, User]
+) -> None:
+    await _watch(db_session, users[0])
+
+    await _refresh(db_session, server).run()
+
+    [row] = await _lookups(db_session)
+    assert (row.provider, row.outcome, row.manual) == ("rostercon", "found", False)
+    assert (row.source_key, row.source_url) == ("paul-mcgann-en", PAUL_PAGE)
+
+
+async def test_a_refresh_remembers_who_it_could_not_place_and_why(
+    db_session: AsyncSession, server: FakeRostercon, users: tuple[User, User]
+) -> None:
+    await _watch(db_session, users[0], "Zed Nobody", tmdb_id=7)
+    await _watch(db_session, users[0], "John Smith", tmdb_id=8)
+    server.pages["/en/people/john-smith-en"] = server.pages[PAUL_URL]
+    server.pages["/en/people/john-smith-2-en"] = server.pages[PAUL_URL]
+
+    await _refresh(db_session, server).run()
+
+    names = {
+        await db_session.scalar(select(Person.name).where(Person.id == r.person_id)): r
+        for r in await _lookups(db_session)
+    }
+    assert {n: (r.outcome, r.source_key) for n, r in names.items()} == {
+        "Zed Nobody": ("not_found", None),
+        "John Smith": ("ambiguous", None),
+    }
+
+
+async def test_a_lookup_that_errors_is_not_remembered_as_not_found(
+    db_session: AsyncSession, server: FakeRostercon, users: tuple[User, User]
+) -> None:
+    await _watch(db_session, users[0])
+    server.pages[PAUL_URL] = (500, "")
+
+    await _refresh(db_session, server).run()
+
+    assert await _lookups(db_session) == []

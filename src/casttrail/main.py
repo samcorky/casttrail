@@ -36,6 +36,7 @@ from casttrail.web.csrf import verify_same_origin
 from casttrail.web.dependencies import LoginRequiredError
 from casttrail.web.errors import PageError, render_page_error
 from casttrail.web.event_routes import router as event_router
+from casttrail.web.link_routes import router as link_router
 from casttrail.web.match_routes import router as match_router
 from casttrail.web.merge_routes import router as merge_router
 from casttrail.web.request_log import RequestLogMiddleware
@@ -317,6 +318,7 @@ def create_app(
         match_router,
         merge_router,
         review_router,
+        link_router,
     ):
         app.include_router(included)
     return app
