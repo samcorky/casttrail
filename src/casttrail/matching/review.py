@@ -22,6 +22,10 @@ class Suggestion:
 
     identity_id: uuid.UUID
     guest_name: str
+    # Which source listed the guest, and the id that source gives them, so two guests
+    # with one name from different sources can be told apart.
+    provider: str
+    source_key: str
     person_id: uuid.UUID
     person_name: str
     events: int
@@ -33,6 +37,8 @@ class GuestRow:
 
     identity_id: uuid.UUID
     guest_name: str
+    provider: str
+    source_key: str
     person_id: uuid.UUID | None
     person_name: str | None
 
@@ -62,6 +68,8 @@ async def suggestions(session: AsyncSession) -> list[Suggestion]:
         select(
             ExternalIdentity.id,
             SHOWN,
+            ExternalIdentity.provider,
+            ExternalIdentity.external_id,
             Person.id,
             Person.name,
             func.count(func.distinct(Appearance.id)),
@@ -73,7 +81,7 @@ async def suggestions(session: AsyncSession) -> list[Suggestion]:
         .group_by(ExternalIdentity.id, Person.id)
         .order_by(func.lower(SHOWN), Person.name, Person.id)
     )
-    return [Suggestion(i, str(g), p, n, int(c)) for i, g, p, n, c in rows]
+    return [Suggestion(i, str(g), r, k, p, n, int(c)) for i, g, r, k, p, n, c in rows]
 
 
 async def linked_guests(session: AsyncSession) -> list[GuestRow]:
@@ -86,12 +94,19 @@ async def linked_guests(session: AsyncSession) -> list[GuestRow]:
         The guests, ordered by name.
     """
     rows = await session.execute(
-        select(ExternalIdentity.id, SHOWN, Person.id, Person.name)
+        select(
+            ExternalIdentity.id,
+            SHOWN,
+            ExternalIdentity.provider,
+            ExternalIdentity.external_id,
+            Person.id,
+            Person.name,
+        )
         .join(Person, Person.id == ExternalIdentity.person_id)
         .where(IS_GUEST)
         .order_by(func.lower(SHOWN), ExternalIdentity.id)
     )
-    return [GuestRow(i, str(g), p, n) for i, g, p, n in rows]
+    return [GuestRow(i, str(g), r, k, p, n) for i, g, r, k, p, n in rows]
 
 
 async def find_guests(session: AsyncSession, text: str) -> list[GuestRow]:
@@ -109,7 +124,14 @@ async def find_guests(session: AsyncSession, text: str) -> list[GuestRow]:
         return []
     escaped = needle.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     rows = await session.execute(
-        select(ExternalIdentity.id, SHOWN, Person.id, Person.name)
+        select(
+            ExternalIdentity.id,
+            SHOWN,
+            ExternalIdentity.provider,
+            ExternalIdentity.external_id,
+            Person.id,
+            Person.name,
+        )
         .outerjoin(Person, Person.id == ExternalIdentity.person_id)
         .where(
             IS_GUEST,
@@ -118,7 +140,7 @@ async def find_guests(session: AsyncSession, text: str) -> list[GuestRow]:
         .order_by(func.lower(SHOWN), ExternalIdentity.id)
         .limit(SEARCH_LIMIT)
     )
-    return [GuestRow(i, str(g), p, n) for i, g, p, n in rows]
+    return [GuestRow(i, str(g), r, k, p, n) for i, g, r, k, p, n in rows]
 
 
 async def people_choices(session: AsyncSession) -> list[tuple[uuid.UUID, str]]:

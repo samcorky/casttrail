@@ -50,7 +50,11 @@ class Facts:
 
 
 async def _guest(
-    session: AsyncSession, key: str, name: str, days: int
+    session: AsyncSession,
+    key: str,
+    name: str,
+    days: int,
+    provider: str = "rostercon",
 ) -> tuple[ExternalIdentity, Appearance]:
     from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -63,7 +67,7 @@ async def _guest(
         updated_at=NOW,
     )
     identity = ExternalIdentity(
-        id=uuid.uuid4(), provider="rostercon", external_id=key, display_name=name
+        id=uuid.uuid4(), provider=provider, external_id=key, display_name=name
     )
     session.add_all([con, identity])
     await session.flush()
@@ -76,8 +80,8 @@ async def _guest(
         AppearanceSource(
             id=uuid.uuid4(),
             appearance_id=appearance.id,
-            provider="rostercon",
-            source_url=f"https://www.rostercon.com/en/people/{key}",
+            provider=provider,
+            source_url=f"https://www.{provider}.com/en/people/{key}",
         )
     )
     return identity, appearance
@@ -607,3 +611,77 @@ async def _decisions_count(database_url: str) -> int:
         count = len(list(await session.scalars(select(IdentityDecision.id))))
     await engine.dispose()
     return count
+
+
+# --- which source a guest came from -------------------------------------------------
+
+
+def _with_comiconomicon_paul(
+    settings: Settings, database_url: str, facts: Facts
+) -> TestClient:
+    """Add a Comiconomicon guest with the same name as the Rostercon Paul McGann."""
+    del facts
+
+    async def add() -> None:
+        engine = create_engine(database_url)
+        async with create_session_factory(engine)() as session:
+            await _guest(session, "518", "Paul McGann", 9, provider="comiconomicon")
+            await session.commit()
+            await MatchService(session).rematch()
+        await engine.dispose()
+
+    asyncio.run(add())
+    return TestClient(create_app(settings), follow_redirects=False, headers=SAME_ORIGIN)
+
+
+def _section(page: str, start: str, end: str) -> str:
+    return page[page.index(start) : page.index(end)]
+
+
+def test_two_guests_with_one_name_are_told_apart_by_their_source(
+    settings: Settings, database_url: str, facts: Facts
+) -> None:
+    with _with_comiconomicon_paul(settings, database_url, facts) as client:
+        page = _admin(client).get("/admin/review").text
+
+    waiting = _section(page, "Waiting to be confirmed", "Linked guests")
+    rows = [r for r in waiting.split("<tr>") if "Paul McGann" in r]
+    assert len(rows) == 2
+    by_source = {
+        name: row
+        for name in ("Rostercon", "Comiconomicon")
+        for row in rows
+        if name in row
+    }
+    assert set(by_source) == {"Rostercon", "Comiconomicon"}
+    assert "paul-en" in by_source["Rostercon"]
+    assert "518" in by_source["Comiconomicon"]
+
+
+def test_a_linked_guest_shows_its_source(client: TestClient, facts: Facts) -> None:
+    admin = _admin(client)
+    assert (
+        admin.post(
+            "/admin/review/confirm",
+            data={
+                "identity_id": str(facts.paul_guest),
+                "person_id": str(facts.paul),
+            },
+        ).status_code
+        == 303
+    )
+
+    linked = _section(admin.get("/admin/review").text, "Linked guests", "Find a guest")
+
+    assert "Paul McGann" in linked
+    assert "Rostercon" in linked
+    assert "paul-en" in linked
+
+
+def test_a_search_result_shows_its_source(client: TestClient) -> None:
+    page = _admin(client).get("/admin/review?q=pertwee").text
+
+    found = page[page.index("Find a guest to link") :]
+    assert "Sean Pertwee" in found
+    assert "Rostercon" in found
+    assert "sean-en" in found

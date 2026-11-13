@@ -296,6 +296,9 @@ Still open:
 - [ ] A6 Startup catch-up for the daily refresh 🧪
 - [ ] A7 Move the older tests from injected clocks and `Clock` helpers to `time-machine` 🧪
 - [ ] A8 GitHub issue templates (issue #51)
+- [ ] A9 Time the refreshes: show each run's duration on the Source health page, and split it by step (lookup, person page, event list, event pages) with counts, separating time waiting on the spacing from time the site took to answer. Stored in the run's `summary` JSON (no migration). Per person is logged (`person_refreshed` with `duration_ms`), not stored. Do it after 5.5c so it covers both sources 🧪 👁️ DEMO The Source health warning "Some watched people have no single Rostercon page; skipped." should also name the people and say why (not found, or several found).
+- [ ] A10 Link a watched person to a Rostercon page by hand: an admin pastes a Rostercon person page address for someone the automatic lookup could not find (seen live: Thomas F. Wilson and Kirsten Cooke were "not found", probably because Rostercon spells the name differently). The address is checked as a Rostercon `/en/people/` page of this host, fetched once to confirm it exists, and stored against the person. A refresh uses a stored link instead of guessing a slug, and a sync never replaces or removes it (only an admin can unlink). Shown on the person and the Source health page. Likely shares the lookup cache table from 5.5b with a `manual` flag 🗄️ 🧪 👁️ DEMO
+- [x] A11 Review guests shows the source of each guest (Rostercon or Comiconomicon, with the source's own id), so two guests with the same name from different sources can be told apart 🧪
 
 ### WP-6 ntfy alerts
 - [ ] 6.1 Notification tables and event keys 🗄️ 🧪
