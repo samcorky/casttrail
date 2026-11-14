@@ -523,3 +523,33 @@ async def test_bytes_that_do_not_decode_are_replaced_not_fatal(world: World) -> 
     page = await world.fetcher().get(PAGE)
 
     assert page.text.endswith(" ok")
+
+
+# --- pacing and counting ----------------------------------------------------------
+
+
+async def test_rostercon_is_spaced_to_stay_under_its_limit_by_default(
+    world: World,
+) -> None:
+    client = create_client(transport=httpx2.MockTransport(world.handler))
+    fetcher = RosterconFetcher(client, clock=world.clock, sleep=world.sleep)
+
+    await fetcher.get("https://www.rostercon.com/en/a")
+    await fetcher.get("https://www.rostercon.com/en/b")
+
+    # About 25 requests in 30 minutes is Rostercon's limit: 75 s apart stays under it.
+    assert world.slept == [75.0]
+
+
+async def test_the_fetcher_counts_the_requests_it_sends(world: World) -> None:
+    fetcher = world.fetcher()
+    world.responses = [httpx2.Response(200, text="x"), httpx2.Response(503)]
+
+    await fetcher.get("https://www.rostercon.com/en/a")
+    with pytest.raises(RosterconUnavailableError):
+        await fetcher.get("https://www.rostercon.com/en/b")
+    # Cooling down now: refused at once, without a request.
+    with pytest.raises(RosterconUnavailableError):
+        await fetcher.get("https://www.rostercon.com/en/c")
+
+    assert fetcher.requests_sent == 2

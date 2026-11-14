@@ -228,17 +228,20 @@ async def refresh_page(
     Returns:
         The page.
     """
+    found = await recent_runs(session)
     runs = [
         {
             "run": run,
             "source": SOURCE_LABELS.get(run.job, run.job),
             "counts": _summary(run.summary),
         }
-        for run in await recent_runs(session)
+        for run in found
     ]
     context = {
         "user": admin,
         "runs": runs,
+        # While a run is going, the list reloads itself to show how far it has got.
+        "running": any(run.status == "running" for run in found),
         "sources": _join(list(SOURCE_LABELS.values())),
         "notice": _NOTICES.get(notice or ""),
         "schedule": request.app.state.settings,

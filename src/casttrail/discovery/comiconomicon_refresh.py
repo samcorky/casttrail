@@ -46,31 +46,19 @@ class ComiconomiconRefresh(SourceRefresh[ComiconomiconFetcher]):
     provider = PROVIDER_ID
     label = "Comiconomicon"
     unavailable_error = ComiconomiconUnavailableError
+    # At 10 s apart this is under an hour.
+    max_requests = 300
 
     def _parse_event(self, text: str, etag: str | None) -> ParsedEventRef:
         return parse_event_page(text, etag=etag)
 
-    async def _refresh(self, report: RefreshReport) -> None:
-        people = await self._watched_people(report)
-        if not people:
-            return
+    async def _events_for(
+        self, person_id: uuid.UUID, name: str, report: RefreshReport
+    ) -> dict[str, ListedEvent]:
         lookup = GuestLookup(self._session, self._fetcher)
-        events: dict[str, ListedEvent] = {}
-        for person_id, name in people:
-            await self._collect(lookup, person_id, name, events, report)
-        await self._fetch_events(events, report)
-
-    async def _collect(
-        self,
-        lookup: GuestLookup,
-        person_id: uuid.UUID,
-        name: str,
-        events: dict[str, ListedEvent],
-        report: RefreshReport,
-    ) -> None:
         guest = await self._guest_for(lookup, person_id, name, report)
         if guest is None:
-            return
+            return {}
         assert guest.source_url is not None
         try:
             page = await self._fetcher.get(guest.source_url)
@@ -89,7 +77,7 @@ class ComiconomiconRefresh(SourceRefresh[ComiconomiconFetcher]):
                 # A guest page that was found by search and is now gone: search again
                 # next time. A page set by hand is kept, so it can be fixed.
                 await lookup.forget(person_id)
-            return
+            return {}
         listed = parse_guest_page(page.text).events
         report.people_matched += 1
         logger.info(
@@ -99,8 +87,10 @@ class ComiconomiconRefresh(SourceRefresh[ComiconomiconFetcher]):
             guest=guest.source_key,
             events_listed=len(listed),
         )
+        events: dict[str, ListedEvent] = {}
         for event in listed:
             events.setdefault(event.source_key, event)
+        return events
 
     async def _guest_for(
         self,

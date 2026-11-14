@@ -223,7 +223,7 @@ def test_recent_runs_are_listed_newest_first_with_their_counts(
 
     assert page.index("2026-11-08 04:00") < page.index("2026-11-07 04:00")
     assert "2026-11-09" not in page
-    assert "3 of 4" in page
+    assert "3 matched of 4" in page
     assert "Rostercon asked us to wait" in page
     assert "Failed" in page
     assert "Succeeded" in page
@@ -488,7 +488,7 @@ def test_the_page_says_which_source_each_run_was(
     assert "Comiconomicon" in comiconomicon[: comiconomicon.index("</tr>")]
     rostercon = page[page.index("2026-11-08") :]
     assert "Rostercon" in rostercon[: rostercon.index("</tr>")]
-    assert "4 of 5" in page
+    assert "4 matched of 5" in page
 
 
 def test_the_page_describes_every_source_it_refreshes(client: TestClient) -> None:
@@ -498,6 +498,57 @@ def test_the_page_describes_every_source_it_refreshes(client: TestClient) -> Non
 
     assert "Rostercon" in page
     assert "Comiconomicon" in page
+
+
+def test_a_running_refresh_shows_how_far_it_has_got_and_keeps_reloading(
+    settings: Settings, database_url: str, refresher: FakeRefresher
+) -> None:
+    progress = {"people_watched": 12, "people_done": 3, "events_fetched": 7}
+    _seed(database_url, [_run("running", 8, json.dumps(progress))])
+
+    for client in _clients(settings, refresher):
+        _sign_in(client, "admin@example.com")
+        page = client.get("/admin/refresh").text
+
+    assert "Running…" in page
+    assert "3 done of 12" in page
+    assert 'hx-trigger="every 10s"' in page
+    assert 'hx-select="#runs"' in page
+
+
+def test_a_run_just_begun_with_no_counts_yet_still_shows(
+    settings: Settings, database_url: str, refresher: FakeRefresher
+) -> None:
+    _seed(database_url, [_run("running", 8)])
+
+    for client in _clients(settings, refresher):
+        _sign_in(client, "admin@example.com")
+        page = client.get("/admin/refresh").text
+
+    assert "0 done of ?" in page
+
+
+def test_finished_runs_do_not_reload_and_say_who_was_left_for_next_time(
+    settings: Settings, database_url: str, refresher: FakeRefresher
+) -> None:
+    counts = {"people_watched": 12, "people_matched": 8, "people_deferred": 4}
+    one = {"people_watched": 2, "people_matched": 1, "people_deferred": 1}
+    _seed(
+        database_url,
+        [
+            _run("succeeded", 7, json.dumps(one)),
+            _run("succeeded", 8, json.dumps(counts)),
+        ],
+    )
+
+    for client in _clients(settings, refresher):
+        _sign_in(client, "admin@example.com")
+        page = client.get("/admin/refresh").text
+
+    assert "8 matched of 12" in page
+    assert "4 people left for the next run." in page
+    assert "1 person left for the next run." in page
+    assert "hx-trigger" not in page
 
 
 def test_the_page_lists_the_sources_from_the_one_registry(

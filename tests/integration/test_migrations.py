@@ -34,7 +34,7 @@ def _revisions(database_url: str) -> list[str]:
 def test_upgrade_on_an_empty_database_reaches_head(database_url: str) -> None:
     command.upgrade(_config(database_url), "head")
 
-    assert _revisions(database_url) == ["0015"]
+    assert _revisions(database_url) == ["0016"]
 
 
 def test_upgrade_is_repeatable(database_url: str) -> None:
@@ -43,7 +43,7 @@ def test_upgrade_is_repeatable(database_url: str) -> None:
     command.upgrade(config, "head")
     command.upgrade(config, "head")
 
-    assert _revisions(database_url) == ["0015"]
+    assert _revisions(database_url) == ["0016"]
 
 
 def test_status_page_shows_the_applied_revision(
@@ -52,7 +52,7 @@ def test_status_page_shows_the_applied_revision(
     command.upgrade(_config(database_url), "head")
 
     with TestClient(create_app(Settings(database_url=database_url))) as client:
-        assert "Database revision 0015" in client.get("/status").text
+        assert "Database revision 0016" in client.get("/status").text
 
 
 def _connect(database_url: str) -> sqlite3.Connection:
@@ -94,7 +94,7 @@ def test_upgrading_from_the_previous_revision_keeps_existing_data(
             ("a@example.com",)
         ]
         assert _table_names(connection) >= NEW_TABLES
-    assert _revisions(database_url) == ["0015"]
+    assert _revisions(database_url) == ["0016"]
 
 
 def test_the_migrated_schema_enforces_its_constraints(database_url: str) -> None:
@@ -181,7 +181,7 @@ def test_upgrading_from_watches_keeps_existing_data(database_url: str) -> None:
             "SELECT external_id FROM external_identities"
         ).fetchall() == [("alice-en",)]
         assert _table_names(connection) >= DISCOVERY_TABLES
-    assert _revisions(database_url) == ["0015"]
+    assert _revisions(database_url) == ["0016"]
 
 
 def test_the_migrated_discovery_schema_enforces_its_constraints(
@@ -283,7 +283,7 @@ def test_upgrading_from_discovery_tables_keeps_identities_and_adds_a_name(
             """
         ).fetchall()
     assert rows == [("1", "p1", None), ("bob-en", None, None)]
-    assert _revisions(database_url) == ["0015"]
+    assert _revisions(database_url) == ["0016"]
 
 
 def test_the_migrated_name_column_takes_a_name_and_may_stay_empty(
@@ -372,7 +372,7 @@ def test_upgrading_from_the_previous_revision_keeps_people_and_adds_lookups(
         assert connection.execute("SELECT COUNT(*) FROM source_lookups").fetchone() == (
             0,
         )
-    assert _revisions(database_url) == ["0015"]
+    assert _revisions(database_url) == ["0016"]
 
 
 def test_the_migrated_source_lookups_table_enforces_its_rules(
@@ -458,7 +458,7 @@ def test_upgrading_from_source_lookups_keeps_rows_as_not_manual(
         assert connection.execute(
             "SELECT source_key, manual FROM source_lookups"
         ).fetchall() == [("518", 0)]
-    assert _revisions(database_url) == ["0015"]
+    assert _revisions(database_url) == ["0016"]
 
 
 def test_only_a_found_lookup_may_be_manual(database_url: str) -> None:
@@ -506,3 +506,67 @@ def test_downgrading_from_manual_links_keeps_the_lookups(database_url: str) -> N
             "SELECT source_key FROM source_lookups"
         ).fetchall() == [("tom-wilson-en",)]
     assert _revisions(database_url) == ["0014"]
+
+
+def test_upgrading_from_manual_links_keeps_lookups_and_adds_progress(
+    database_url: str,
+) -> None:
+    config = _config(database_url)
+    command.upgrade(config, "0015")
+    with closing(_connect(database_url)) as connection:
+        connection.execute(
+            f"INSERT INTO people (id, name, created_at) VALUES ('a', 'Alice', {NOW})"
+        )
+        connection.execute(
+            f"""
+            INSERT INTO source_lookups (id, provider, person_id, outcome, source_key,
+                                        source_url, manual, looked_up_at)
+            VALUES ('1', 'rostercon', 'a', 'found', 'alice-en', 'u', 0, {NOW})
+            """
+        )
+        connection.commit()
+
+    command.upgrade(config, "head")
+
+    with closing(_connect(database_url)) as connection:
+        assert connection.execute(
+            "SELECT source_key FROM source_lookups"
+        ).fetchall() == [("alice-en",)]
+        assert "refresh_progress" in _table_names(connection)
+    assert _revisions(database_url) == ["0016"]
+
+
+def test_the_migrated_progress_table_has_one_row_per_source_and_person(
+    database_url: str,
+) -> None:
+    command.upgrade(_config(database_url), "head")
+    insert = f"""
+        INSERT INTO refresh_progress (provider, person_id, refreshed_at)
+        VALUES (?, ?, {NOW})
+    """
+    with closing(_connect(database_url)) as connection:
+        connection.execute(
+            f"INSERT INTO people (id, name, created_at) VALUES ('a', 'Alice', {NOW})"
+        )
+        connection.execute(insert, ("rostercon", "a"))
+        connection.execute(insert, ("comiconomicon", "a"))
+
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(insert, ("rostercon", "a"))
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(insert, ("rostercon", "nobody"))
+        connection.execute("DELETE FROM people")
+        assert connection.execute("SELECT * FROM refresh_progress").fetchall() == []
+
+
+def test_downgrading_removes_only_the_progress_table(database_url: str) -> None:
+    config = _config(database_url)
+    command.upgrade(config, "head")
+
+    command.downgrade(config, "0015")
+
+    with closing(_connect(database_url)) as connection:
+        tables = _table_names(connection)
+        assert "refresh_progress" not in tables
+        assert "source_lookups" in tables
+    assert _revisions(database_url) == ["0015"]
