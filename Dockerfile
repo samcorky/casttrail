@@ -68,7 +68,7 @@ COPY migrations/ /app/migrations/
 RUN mkdir -p /data /backups && chown 1000:1000 /data /backups
 
 
-FROM gcr.io/distroless/base-debian13:nonroot@sha256:9039a88709bcc2bacf5a2faac331d65dd6840f763f225ad9594cc0c67bcd0fba AS runtime
+FROM gcr.io/distroless/base-debian13:nonroot@sha256:a08d9054afbaf1af9b90fd02cdc7b32236319b5376d374505a41548d42b0c5db AS runtime
 
 ARG VERSION=""
 LABEL org.opencontainers.image.title="CastTrail" \
