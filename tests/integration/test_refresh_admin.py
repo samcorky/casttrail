@@ -498,3 +498,55 @@ def test_the_page_describes_every_source_it_refreshes(client: TestClient) -> Non
 
     assert "Rostercon" in page
     assert "Comiconomicon" in page
+
+
+def test_the_page_lists_the_sources_from_the_one_registry(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from casttrail.web import admin_routes
+
+    monkeypatch.setattr(
+        admin_routes,
+        "SOURCE_LABELS",
+        {"rostercon-refresh": "Rostercon", "wikipedia-refresh": "Wikipedia"},
+    )
+    _sign_in(client, "admin@example.com")
+
+    page = client.get("/admin/refresh").text
+
+    # A source added to the registry is named on the page with no template change.
+    assert "Wikipedia" in page
+    assert "Comiconomicon" not in page
+    assert "Rostercon and Wikipedia" in " ".join(page.split())
+
+
+def test_one_source_is_named_without_an_and(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from casttrail.web import admin_routes
+
+    monkeypatch.setattr(
+        admin_routes, "SOURCE_LABELS", {"rostercon-refresh": "Rostercon"}
+    )
+    _sign_in(client, "admin@example.com")
+
+    text = " ".join(client.get("/admin/refresh").text.split())
+
+    assert "on Rostercon and stores" in text
+
+
+def test_three_sources_are_listed_with_commas(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from casttrail.web import admin_routes
+
+    monkeypatch.setattr(
+        admin_routes,
+        "SOURCE_LABELS",
+        {"a": "Alpha", "b": "Beta", "c": "Gamma"},
+    )
+    _sign_in(client, "admin@example.com")
+
+    text = " ".join(client.get("/admin/refresh").text.split())
+
+    assert "Alpha, Beta and Gamma" in text
