@@ -64,6 +64,10 @@ the database is brought up to date and a backup is taken, all at startup.
 4. The first administrator is created if the database has no users and the admin
    settings are set.
 5. Timers start: the daily backup, and the daily refresh (Rostercon, then Comiconomicon) if switched on.
+6. If the refresh is switched on and was missed (no run has begun since the refresh hour
+   last passed, say because the PC was off), it starts now in the background. A run cut
+   short by the app stopping is tried again; one that crashed is left for the next day.
+   Look for `startup_refresh_started` in the log.
 
 A problem in step 1 or 2 does not crash the app. It starts, every page shows a plain
 "needs attention" message, and `/health` answers `503 {"status": "degraded"}`. The

@@ -1,11 +1,13 @@
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Protocol
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from casttrail.discovery.comiconomicon_refresh import JOB as COMICONOMICON_JOB
 from casttrail.discovery.models import JobRun
 from casttrail.discovery.refresh import JOB as ROSTERCON_JOB, RosterconRefresh
+from casttrail.discovery.source_refresh import INTERRUPTED
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -121,6 +123,45 @@ async def run_in_background(job: Refresher) -> None:
         logger.error("background_refresh_failed")
     finally:
         structlog.contextvars.clear_contextvars()
+
+
+def _last_due(hour: int) -> datetime:
+    """When the daily refresh was last due: today at ``hour`` if that has passed."""
+    # The timer counts in the server's local time, so this does too.
+    now = datetime.now().astimezone()
+    due = now.replace(hour=hour, minute=0, second=0, microsecond=0)
+    return due if due <= now else due - timedelta(days=1)
+
+
+async def refresh_is_due(session: AsyncSession, hour: int) -> bool:
+    """Whether the daily refresh was missed, so startup should run it now.
+
+    It was missed if no refresh has begun since it was last due (the app was off, or
+    the PC asleep). A run cut short by the app stopping does not count, so it is tried
+    again; a run that died without saying why does, so an app that keeps crashing does
+    not keep asking the sources.
+
+    Args:
+        session: The database session.
+        hour: The hour the refresh runs each day, in the server's local time.
+
+    Returns:
+        ``True`` if a refresh should run now.
+    """
+    since = _last_due(hour).astimezone(UTC)
+    ran = await session.scalar(
+        select(JobRun.id)
+        .where(
+            JobRun.job.in_(SOURCE_LABELS),
+            JobRun.started_at >= since,
+            # NULL (no summary yet) counts as distinct, so a run that died counts.
+            func.json_extract(JobRun.summary, "$.stopped").is_distinct_from(
+                INTERRUPTED
+            ),
+        )
+        .limit(1)
+    )
+    return ran is None
 
 
 async def recent_runs(session: AsyncSession, limit: int = 10) -> list[JobRun]:

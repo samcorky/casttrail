@@ -293,7 +293,7 @@ Still open:
 - [x] A3 Docker image, Compose file, health check and `poe docker-*` tasks; running on the owner's PC behind `tailscale serve` (#56) 🧪
 - [x] A4 Logo: a wavy trail tucked behind the star, an icon generator (`poe generate-icons`) and a test that the committed icons match the logo (PR #59, open) 🧪
 - [x] A5 Move the UI from Pico to Bootstrap 5.3 (issue #50): one-row nav with an Admin dropdown, tables that fit a phone, dark mode 👁️ DEMO
-- [ ] A6 Startup catch-up for the daily refresh 🧪
+- [x] A6 Startup catch-up for the daily refresh 🧪 (as built: runs at startup if no refresh has begun since the refresh hour last passed; a run cut short by the app stopping is retried; see `docs/decisions.md`)
 - [ ] A7 Move the older tests from injected clocks and `Clock` helpers to `time-machine` 🧪
 - [ ] A8 GitHub issue templates (issue #51)
 - [x] A9 Time the refreshes: show each run's duration on the Source health page, and split it by step (lookup, person page, event list, event pages) with counts, separating time waiting on the spacing from time the site took to answer. Stored in the run's `summary` JSON (no migration). Per person is logged (`person_refreshed` with `duration_ms`), not stored. Do it after 5.5c so it covers both sources 🧪 👁️ DEMO The Source health warning "Some watched people have no single Rostercon page; skipped." should also name the people and say why (not found, or several found). (as built: see `docs/decisions.md`)

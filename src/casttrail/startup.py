@@ -37,6 +37,9 @@ BACKUP_FIRST_PROBLEM = (
 MIGRATE_PROBLEM = "The database could not be updated. A copy from before is in backups."
 FOLDER_PROBLEM = "The data folder could not be created."
 BACKUP_WARNING = "A backup could not be taken. See the server log."
+REFRESH_WARNING = (
+    "Could not check whether the daily refresh was missed. See the server log."
+)
 
 
 @dataclass

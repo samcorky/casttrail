@@ -481,3 +481,10 @@ The app is meant to run in Docker. Files: `Dockerfile`, `compose.yaml`, `.docker
 - **Per person** is logged, not stored: `person_refreshed` with `requests` and `duration_ms`.
 - **Source health** shows how long each source's last run took and a table of its steps. Waiting its turn is labelled as deliberate, so a long Rostercon run (75 s apart) does not read as a slow site.
 - **Who was skipped:** the "no single page" warning names the watched people whose lookup on that source found nobody or several pages, with which, read from `source_lookups` (A10), and points to Source pages to set one by hand. If none can be named, the old sentence stays.
+
+## A6: catching up a missed daily refresh at startup (2026-11-14)
+
+- **Why:** the timer lives in memory (APScheduler, no jobstore, as the plan prefers). If the app is off or the PC asleep at the refresh hour, the run is simply skipped, and nothing is refreshed until the next day.
+- **The rule:** at startup, with the refresh switched on, the refresh is due if no run of any source has begun since the refresh hour last passed (today's if it is past, otherwise yesterday's), in the server's local time like the timer. It then starts in the background, in the same slot as the Refresh button, so startup does not wait and the button says it is running.
+- **What counts as a run:** a run cut short by the app stopping (`Interrupted: the app stopped`) does not, so a restart in the middle of the night's run picks it up again (and A13 carries on where it stopped). Anything else does, including a crash or a run that died without finishing: an app that keeps crashing at startup must not keep asking Rostercon.
+- **The sources together:** one check covers both, because they run in turn as one refresh. If the check itself fails, the app carries on and the Source health page shows a warning.

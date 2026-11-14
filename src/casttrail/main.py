@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 from datetime import timedelta
 from typing import TYPE_CHECKING
@@ -16,7 +17,12 @@ from casttrail.auth.service import AuthService
 from casttrail.config import Settings
 from casttrail.db import create_engine, create_session_factory
 from casttrail.discovery.comiconomicon_refresh import ComiconomiconRefresh
-from casttrail.discovery.schedule import RefreshAll, RefreshJob, run_in_background
+from casttrail.discovery.schedule import (
+    RefreshAll,
+    RefreshJob,
+    refresh_is_due,
+    run_in_background,
+)
 from casttrail.logging_config import configure_logging
 from casttrail.providers.comiconomicon_client import ComiconomiconFetcher
 from casttrail.providers.polite import create_client as create_scraping_client
@@ -24,6 +30,7 @@ from casttrail.providers.rostercon_client import RosterconFetcher
 from casttrail.providers.tmdb import TmdbProvider, create_client
 from casttrail.startup import (
     ADMIN_WARNING,
+    REFRESH_WARNING,
     TIMERS_WARNING,
     ProblemGuard,
     StartupReport,
@@ -138,6 +145,29 @@ def _safely_start_scheduler(
         return None
 
 
+async def _catch_up_refresh(
+    app: FastAPI, settings: Settings, report: StartupReport
+) -> None:
+    """Run the daily refresh now if it was missed while the app was off.
+
+    It runs in the background, as if the Refresh button had been pressed, so startup
+    does not wait for it and the button sees that it is running.
+    """
+    if not settings.refresh_enabled:
+        return
+    try:
+        async with app.state.session_factory() as session:
+            due = await refresh_is_due(session, settings.refresh_hour)
+    except Exception:
+        logger.exception("startup_refresh_check_failed")
+        report.warnings.append(REFRESH_WARNING)
+        return
+    if not due:
+        return
+    logger.info("startup_refresh_started", refresh_hour=settings.refresh_hour)
+    app.state.refresh_task = asyncio.create_task(run_in_background(app.state.refresher))
+
+
 async def _safely_create_first_admin(
     settings: Settings,
     session_factory: async_sessionmaker[AsyncSession],
@@ -250,6 +280,7 @@ def _lifespan(
                 app.state.scheduler = _safely_start_scheduler(
                     settings, app.state.refresher, report
                 )
+                await _catch_up_refresh(app, settings, report)
             logger.info(
                 "app_ready",
                 problems=report.problems,
