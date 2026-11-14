@@ -7,8 +7,8 @@
 {% endif %}
 <p>
   This looks up the people anyone is watching on {{ sources }} and stores the
-  conventions they are listed for. Each site is asked slowly, one after the other, so a
-  run can take many minutes.
+  conventions they are listed for. The sites are refreshed side by side, and each is
+  asked slowly, one page at a time, so a run can take many minutes.
   {% if schedule.refresh_enabled %}
   It also runs by itself every day at {{ "%02d"|format(schedule.refresh_hour) }}:00 server time.
   {% else %}

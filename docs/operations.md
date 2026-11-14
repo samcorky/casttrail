@@ -63,7 +63,7 @@ the database is brought up to date and a backup is taken, all at startup.
 3. If the newest backup is more than a day old (a PC that sleeps at night), one is taken.
 4. The first administrator is created if the database has no users and the admin
    settings are set.
-5. Timers start: the daily backup, and the daily refresh (Rostercon, then Comiconomicon) if switched on.
+5. Timers start: the daily backup, and the daily refresh (Rostercon and Comiconomicon side by side) if switched on.
 6. If the refresh is switched on and was missed (no run has begun since the refresh hour
    last passed, say because the PC was off), it starts now in the background. A run cut
    short by the app stopping is tried again; one that crashed is left for the next day.
