@@ -615,3 +615,33 @@ async def test_the_run_logs_which_source_it_is(
     finished = [e for e in events if e["event"] == "refresh_finished"]
     assert [e["source"] for e in started + finished] == ["comiconomicon"] * 2
     assert finished[0]["people_matched"] == 1
+
+
+# --- timing (A9) -------------------------------------------------------------------
+
+
+def _steps(run: JobRun) -> dict[str, tuple[int, int]]:
+    steps = json.loads(run.summary or "{}")["steps"]
+    return {name: (step["count"], step["requests"]) for name, step in steps.items()}
+
+
+async def test_a_lookup_answered_from_memory_is_not_counted_as_a_step(
+    db_session: AsyncSession, server: FakeComiconomicon, users: tuple[User, User]
+) -> None:
+    await _watch(db_session, users[0])
+
+    await _refresh(db_session, server).run()
+    first = await _only_run(db_session)
+    await _refresh(db_session, server).run()
+    second = await db_session.scalar(select(JobRun).where(JobRun.id != first.id))
+    assert second is not None
+
+    first_steps, second_steps = _steps(first), _steps(second)
+    # Comiconomicon's guest page lists the events itself: there is no event list.
+    assert set(first_steps) == {"lookup", "person_page", "event_pages"}
+    assert first_steps["person_page"] == (1, 1)
+    assert first_steps["event_pages"] == (1, 1)
+    # The second run used the remembered guest, so nothing was looked up.
+    assert second_steps == {"person_page": (1, 1), "event_pages": (1, 1)}
+    total = sum(r for _, r in [*first_steps.values(), *second_steps.values()])
+    assert total == len(server.requests)

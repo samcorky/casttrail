@@ -91,7 +91,8 @@ class RosterconRefresh(SourceRefresh[RosterconFetcher]):
     ) -> FoundPerson | None:
         """Fetch a page already known. Raises ``_PageMoved`` if it is gone."""
         try:
-            page = await self._fetcher.get(known.page.url)
+            async with self._step("person_page", report):
+                page = await self._fetcher.get(known.page.url)
         except RosterconUnavailableError:
             raise
         except ProviderError as error:
@@ -118,7 +119,8 @@ class RosterconRefresh(SourceRefresh[RosterconFetcher]):
         report: RefreshReport,
     ) -> FoundPerson | None:
         try:
-            matches = await find_people(self._fetcher, name)
+            async with self._step("lookup", report):
+                matches = await find_people(self._fetcher, name)
         except RosterconUnavailableError:
             raise
         except ProviderError as error:
@@ -150,7 +152,9 @@ class RosterconRefresh(SourceRefresh[RosterconFetcher]):
             rows = parse_event_rows(found.text).events
             link = parse_all_events_link(found.text)
             if link is not None:
-                rows += parse_event_rows((await self._fetcher.get(link)).text).events
+                async with self._step("event_list", report):
+                    listing = await self._fetcher.get(link)
+                rows += parse_event_rows(listing.text).events
         except RosterconUnavailableError:
             raise
         except ProviderError as error:

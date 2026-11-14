@@ -57,6 +57,32 @@ def tmdb_image(path: str | None, size: str = "w185") -> str | None:
 templates.env.globals["tmdb_image"] = tmdb_image
 
 
+def duration(seconds: float | None) -> str:
+    """Write a length of time as a person would: ``45 s``, ``3 min 5 s``, ``1 h 2 min``.
+
+    Args:
+        seconds: The time in seconds, or ``None`` if not known.
+
+    Returns:
+        The time in words, or a dash if not known.
+    """
+    if seconds is None:
+        return "-"
+    if seconds < 10:
+        return f"{seconds:.1f} s"
+    whole = round(seconds)
+    if whole < 60:
+        return f"{whole} s"
+    minutes, secs = divmod(whole, 60)
+    if minutes < 60:
+        return f"{minutes} min {secs} s"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours} h {minutes} min"
+
+
+templates.env.filters["duration"] = duration
+
+
 @router.get("/health")
 async def health(session: SessionDep, response: Response) -> dict[str, str]:
     """Liveness probe. Discloses nothing about the configuration.

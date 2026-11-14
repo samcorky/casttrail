@@ -2,7 +2,8 @@ import asyncio
 import json
 import time
 from abc import ABC, abstractmethod
-from dataclasses import asdict, dataclass
+from contextlib import asynccontextmanager
+from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, ClassVar, Protocol
 
@@ -20,7 +21,7 @@ from casttrail.watching.models import Watch
 
 if TYPE_CHECKING:
     import uuid
-    from collections.abc import Callable, Mapping
+    from collections.abc import AsyncIterator, Callable, Mapping
 
     from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,6 +33,25 @@ logger = structlog.get_logger(__name__)
 STALE_AFTER = timedelta(hours=2)
 # Events that began a day or two ago may still be running.
 _GRACE = timedelta(days=2)
+
+
+@dataclass
+class StepTime:
+    """How often one step of a refresh ran, and where its time went.
+
+    ``waited_s`` is time spent waiting for the source's spacing between requests;
+    ``answering_s`` is time the site took to answer.
+    """
+
+    count: int = 0
+    requests: int = 0
+    waited_s: float = 0.0
+    answering_s: float = 0.0
+
+
+# The steps a refresh times, in the order a person goes through them. A source that
+# has no separate list of events (Comiconomicon) never records ``event_list``.
+STEPS = ("lookup", "person_page", "event_list", "event_pages")
 
 
 @dataclass
@@ -56,6 +76,8 @@ class RefreshReport:
     matches_removed: int = 0
     # Why the run stopped early, if it did.
     stopped: str | None = None
+    # Each step's counts and time, by its name in ``STEPS``.
+    steps: dict[str, StepTime] = field(default_factory=dict)
 
 
 class ListedEventRef(Protocol):
@@ -270,8 +292,16 @@ class SourceRefresh[F: PoliteFetcher](ABC):
                 self._defer(len(people) - index, report)
                 return
             failures = report.people_failed
+            started, sent = time.perf_counter(), self._fetcher.requests_sent
             events = await self._events_for(person_id, name, report)
             complete = await self._fetch_events(events, report)
+            logger.info(
+                "person_refreshed",
+                source=self.provider,
+                person=name,
+                requests=self._fetcher.requests_sent - sent,
+                duration_ms=round((time.perf_counter() - started) * 1000, 1),
+            )
             # The first person had the whole cap, so they count as done even if their
             # events did not all fit; anyone else waits and goes first next time.
             if not complete and index > 0:
@@ -287,6 +317,32 @@ class SourceRefresh[F: PoliteFetcher](ABC):
                 )
                 report.people_done += 1
             await self._save_progress(report)
+
+    @asynccontextmanager
+    async def _step(self, name: str, report: RefreshReport) -> AsyncIterator[None]:
+        """Count one step and add the requests and time it took to the report.
+
+        The fetcher sends one request at a time, so what it counted while the step ran
+        belongs to the step. A step that sent nothing (answered from what was stored,
+        or stopped by a cooldown) is not counted.
+        """
+        fetcher = self._fetcher
+        sent, waited, answering = (
+            fetcher.requests_sent,
+            fetcher.waited_s,
+            fetcher.answering_s,
+        )
+        try:
+            yield
+        finally:
+            if fetcher.requests_sent > sent:
+                step = report.steps.setdefault(name, StepTime())
+                step.count += 1
+                step.requests += fetcher.requests_sent - sent
+                step.waited_s = round(step.waited_s + fetcher.waited_s - waited, 1)
+                step.answering_s = round(
+                    step.answering_s + fetcher.answering_s - answering, 1
+                )
 
     def _spent(self) -> bool:
         """Whether this run has sent all the requests it may."""
@@ -381,7 +437,8 @@ class SourceRefresh[F: PoliteFetcher](ABC):
     ) -> None:
         """Fetch and store one event page, counting what happened."""
         try:
-            page = await self._fetcher.get(event.source_url)
+            async with self._step("event_pages", report):
+                page = await self._fetcher.get(event.source_url)
         except self.unavailable_error:
             raise
         except ProviderError as error:

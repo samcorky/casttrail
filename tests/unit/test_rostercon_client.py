@@ -29,6 +29,8 @@ class World:
         self.slept: list[float] = []
         self.requests: list[httpx2.Request] = []
         self.responses: list[httpx2.Response] = []
+        # How long each answer takes, in turn; none means at once.
+        self.answer_s: list[float] = []
 
     def clock(self) -> float:
         return self.now
@@ -39,6 +41,8 @@ class World:
 
     def handler(self, request: httpx2.Request) -> httpx2.Response:
         self.requests.append(request)
+        if self.answer_s:
+            self.now += self.answer_s.pop(0)
         if self.responses:
             return self.responses.pop(0)
         return httpx2.Response(200, text="<html></html>")
@@ -553,3 +557,22 @@ async def test_the_fetcher_counts_the_requests_it_sends(world: World) -> None:
         await fetcher.get("https://www.rostercon.com/en/c")
 
     assert fetcher.requests_sent == 2
+
+
+async def test_the_fetcher_adds_up_its_waiting_and_the_site_answering(
+    world: World,
+) -> None:
+    fetcher = world.fetcher(10.0)
+    world.answer_s = [2.0, 0.5, 4.0]
+    world.responses = [httpx2.Response(200), httpx2.Response(200), httpx2.Response(500)]
+
+    await fetcher.get("https://www.rostercon.com/en/a")
+    await fetcher.get("https://www.rostercon.com/en/b")
+    with pytest.raises(ProviderError):
+        await fetcher.get("https://www.rostercon.com/en/c")
+
+    # Each wait is the 10 s spacing less the time the last answer took; a failed
+    # answer still took the site's time.
+    assert world.slept == [8.0, 9.5]
+    assert fetcher.waited_s == pytest.approx(17.5)
+    assert fetcher.answering_s == pytest.approx(6.5)
