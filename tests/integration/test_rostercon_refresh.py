@@ -1,5 +1,7 @@
 import asyncio
 import json
+import sqlite3
+from contextlib import closing
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -11,13 +13,13 @@ from sqlalchemy import func, select
 
 from casttrail.auth.service import AuthService
 from casttrail.catalogue.models import Person
-from casttrail.discovery import source_refresh
 from casttrail.discovery.links import ROSTERCON, SourceLinks
 from casttrail.discovery.models import (
     Appearance,
     AppearanceSource,
     Convention,
     JobRun,
+    RefreshProgress,
     SourceLookup,
 )
 from casttrail.discovery.refresh import STALE_AFTER, RosterconRefresh
@@ -386,7 +388,8 @@ async def test_soonest_events_come_first_and_the_rest_wait_for_the_next_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     await _watch(db_session, users[0])
-    monkeypatch.setattr(source_refresh, "MAX_EVENT_PAGES", 1)
+    # The name lookup (three addresses) and the events list, then one event page.
+    monkeypatch.setattr(RosterconRefresh, "max_requests", 5)
 
     report = await _refresh(db_session, server).run()
 
@@ -627,7 +630,8 @@ async def test_events_are_taken_by_date_and_not_by_name(
         assert "Feb 13th 2027" in text
         # Now "for-the-love-of-time-space-2027" is later, but sorts first by name.
         server.pages[path] = (status, text.replace("Feb 13th 2027", "Feb 25th 2027"))
-    monkeypatch.setattr(source_refresh, "MAX_EVENT_PAGES", 1)
+    # The name lookup (three addresses) and the events list, then one event page.
+    monkeypatch.setattr(RosterconRefresh, "max_requests", 5)
 
     await _refresh(db_session, server).run()
 
@@ -1110,3 +1114,213 @@ async def test_stopping_the_app_mid_refresh_is_recorded_as_an_interruption(
     assert "refresh_crashed" not in names
     # The lock is free, so the next run is not turned away.
     assert await _refresh(db_session, server).run() is not None
+
+
+# --- carrying on where a run stopped (A13) ------------------------------------------
+
+
+PAULA_URL = "/en/people/paula-mcgann-en"
+
+
+def _add_paula(server: FakeRostercon) -> None:
+    """Serve a second watched person, with Paul's pages under her own address."""
+    status, text = server.pages[PAUL_URL]
+    server.pages[PAULA_URL] = (
+        status,
+        text.replace("paul-mcgann-en", "paula-mcgann-en"),
+    )
+    server.pages[f"{PAULA_URL}/events/18489"] = server.pages[EVENTS_URL]
+
+
+async def _watch_both(session: AsyncSession, users: tuple[User, User]) -> None:
+    await _watch(session, users[0])
+    await _watch(session, users[0], "Paula McGann", tmdb_id=2)
+
+
+def _people_asked(server: FakeRostercon) -> list[str]:
+    """The person pages asked for, in order, without their event lists."""
+    return [
+        path
+        for path in server.requests
+        if path.startswith("/en/people/") and "/events/" not in path
+    ]
+
+
+async def _done(session: AsyncSession) -> set[str]:
+    rows = await session.execute(
+        select(Person.name)
+        .join(RefreshProgress, RefreshProgress.person_id == Person.id)
+        .where(RefreshProgress.provider == "rostercon")
+    )
+    return set(rows.scalars())
+
+
+async def test_each_person_is_recorded_as_done_once_their_events_are_stored(
+    db_session: AsyncSession, server: FakeRostercon, users: tuple[User, User]
+) -> None:
+    await _watch_both(db_session, users)
+    _add_paula(server)
+
+    report = await _refresh(db_session, server).run()
+
+    assert report is not None
+    assert (report.people_done, report.people_deferred) == (2, 0)
+    assert await _done(db_session) == {"Paul McGann", "Paula McGann"}
+
+
+async def test_a_run_refused_part_way_keeps_who_was_done_and_carries_on_from_there(
+    db_session: AsyncSession, server: FakeRostercon, users: tuple[User, User]
+) -> None:
+    await _watch_both(db_session, users)
+    _add_paula(server)
+    server.pages[PAULA_URL] = (503, "")
+    first = await _refresh(db_session, server).run()
+    _add_paula(server)
+    server.requests.clear()
+
+    second = await _refresh(db_session, server).run()
+
+    assert first is not None
+    assert first.stopped == "Rostercon asked us to wait"
+    assert first.people_done == 1
+    assert second is not None
+    # Paula was cut off, so she comes first now, ahead of Paul by name.
+    assert _people_asked(server)[0].startswith(PAULA_URL)
+    assert await _done(db_session) == {"Paul McGann", "Paula McGann"}
+
+
+async def test_the_request_cap_leaves_the_rest_for_the_next_run_and_they_go_first(
+    db_session: AsyncSession,
+    server: FakeRostercon,
+    users: tuple[User, User],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await _watch_both(db_session, users)
+    _add_paula(server)
+    # Paul's lookup (three addresses), his events list and his two events.
+    monkeypatch.setattr(RosterconRefresh, "max_requests", 6)
+
+    first = await _refresh(db_session, server).run()
+    server.requests.clear()
+    second = await _refresh(db_session, server).run()
+
+    assert first is not None
+    assert (first.people_done, first.people_deferred) == (1, 1)
+    assert first.stopped is None
+    assert (await _done(db_session)) == {"Paul McGann", "Paula McGann"}
+    assert second is not None
+    assert _people_asked(server)[0].startswith(PAULA_URL)
+
+
+async def test_a_person_cut_off_by_the_cap_waits_unless_they_had_the_whole_cap(
+    db_session: AsyncSession,
+    server: FakeRostercon,
+    users: tuple[User, User],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await _watch_both(db_session, users)
+    _add_paula(server)
+    # Paula lists a third event; Paul's two are fetched for him already.
+    events = server.pages[EVENTS_URL][1].replace(LOVE, "paula-only-2027")
+    server.pages[f"{PAULA_URL}/events/18489"] = (200, events)
+    server.add_event("paula-only-2027")
+    # Paul takes six; Paula's lookup takes three and her list one: no room for hers.
+    monkeypatch.setattr(RosterconRefresh, "max_requests", 10)
+
+    report = await _refresh(db_session, server).run()
+
+    assert report is not None
+    assert (report.people_done, report.people_deferred) == (1, 1)
+    assert report.events_deferred == 1
+    assert await _done(db_session) == {"Paul McGann"}
+
+
+async def test_the_first_person_counts_as_done_even_if_their_events_did_not_fit(
+    db_session: AsyncSession,
+    server: FakeRostercon,
+    users: tuple[User, User],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await _watch(db_session, users[0])
+    monkeypatch.setattr(RosterconRefresh, "max_requests", 5)
+
+    report = await _refresh(db_session, server).run()
+
+    # Otherwise someone with more events than the cap would block everyone forever.
+    assert report is not None
+    assert (report.people_done, report.events_deferred) == (1, 1)
+    assert await _done(db_session) == {"Paul McGann"}
+
+
+async def test_a_person_who_failed_is_not_done_and_goes_first_next_time(
+    db_session: AsyncSession, server: FakeRostercon, users: tuple[User, User]
+) -> None:
+    await _watch_both(db_session, users)
+    _add_paula(server)
+    await _refresh(db_session, server).run()
+    server.pages[EVENTS_URL] = (500, "")
+
+    report = await _refresh(db_session, server).run()
+    server.requests.clear()
+    await _refresh(db_session, server).run()
+
+    assert report is not None
+    assert (report.people_failed, report.people_done) == (1, 1)
+    # Paula was done after Paul in the second run, so Paul, who failed, is first.
+    assert _people_asked(server)[0] == PAUL_URL
+
+
+async def test_a_running_refresh_saves_its_counts_as_it_goes(
+    db_session: AsyncSession,
+    server: FakeRostercon,
+    users: tuple[User, User],
+    database_url: str,
+) -> None:
+    await _watch_both(db_session, users)
+    _add_paula(server)
+    path = database_url.removeprefix("sqlite+aiosqlite:///")
+    seen: list[dict[str, Any]] = []
+    serve = server.handler
+
+    def watching(request: httpx2.Request) -> httpx2.Response:
+        # Read the run as the Refresh page would, from another connection.
+        # Once mid-way through Paul's events, and once as Paula's turn begins.
+        second_event = request.url.path.endswith(PENSACON) and not seen
+        paulas_turn = request.url.path.startswith(PAULA_URL) and len(seen) == 1
+        if second_event or paulas_turn:
+            with closing(sqlite3.connect(path)) as connection:
+                row = connection.execute(
+                    "SELECT summary FROM job_runs WHERE status = 'running'"
+                ).fetchone()
+            seen.append(json.loads(row[0] or "{}"))
+        return serve(request)
+
+    server.handler = watching  # type: ignore[method-assign]
+
+    await _refresh(db_session, server).run()
+
+    assert len(seen) == 2
+    assert (seen[0].get("people_done"), seen[0].get("events_fetched")) == (0, 1)
+    assert seen[1]["people_done"] == 1
+    assert seen[1]["people_watched"] == 2
+    assert seen[1]["events_fetched"] == 2
+
+
+async def test_what_another_source_has_done_does_not_change_the_order(
+    db_session: AsyncSession, server: FakeRostercon, users: tuple[User, User]
+) -> None:
+    await _watch_both(db_session, users)
+    _add_paula(server)
+    db_session.add(
+        RefreshProgress(
+            provider="comiconomicon",
+            person_id=await _person_id(db_session, "Paul McGann"),
+            refreshed_at=START,
+        )
+    )
+    await db_session.commit()
+
+    await _refresh(db_session, server).run()
+
+    # Rostercon has done neither, so Paul is first by name.
+    assert _people_asked(server)[0] == PAUL_URL

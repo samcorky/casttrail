@@ -242,3 +242,20 @@ class SourceLookup(Base):
     # Set by a person, not found by a search. Such a row never goes stale and a search
     # never replaces it; only a person can remove it.
     manual: Mapped[bool] = mapped_column(default=False, server_default=text("0"))
+
+
+class RefreshProgress(Base):
+    """When a refresh last finished with a watched person, for one source.
+
+    A refresh takes the people it has never done first, then the ones done longest
+    ago, so a run cut short by a refusal or a restart carries on where it stopped
+    instead of starting again at the first person. Deleting the person deletes the row.
+    """
+
+    __tablename__ = "refresh_progress"
+
+    provider: Mapped[str] = mapped_column(String(50), primary_key=True)
+    person_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("people.id", ondelete="CASCADE"), primary_key=True
+    )
+    refreshed_at: Mapped[datetime] = mapped_column(UtcDateTime)

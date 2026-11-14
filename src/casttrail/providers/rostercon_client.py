@@ -25,6 +25,8 @@ class RosterconFetcher(PoliteFetcher):
     host = HOST
     unavailable_error = RosterconUnavailableError
     not_found_error = RosterconNotFoundError
+    # Rostercon refuses after about 25 requests in 30 minutes, so stay under that.
+    default_interval = 75.0
 
 
 @dataclass(frozen=True)

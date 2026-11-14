@@ -82,8 +82,12 @@ class PoliteFetcher:
     made during the cooldown fail at once without touching the network.
 
     A subclass sets ``source`` (a snake_case name for log lines), ``label`` (the name
-    shown in error messages), ``host`` and the two error types.
+    shown in error messages), ``host`` and the two error types, and may set
+    ``default_interval`` for a site that wants more room than ``MIN_INTERVAL``.
     """
+
+    #: The spacing used when none is given, in seconds.
+    default_interval: ClassVar[float] = MIN_INTERVAL
 
     source: ClassVar[str]
     label: ClassVar[str]
@@ -95,7 +99,7 @@ class PoliteFetcher:
         self,
         client: httpx2.AsyncClient,
         *,
-        min_interval: float = MIN_INTERVAL,
+        min_interval: float | None = None,
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
@@ -103,18 +107,27 @@ class PoliteFetcher:
 
         Args:
             client: The HTTP client, from ``create_client``.
-            min_interval: The least time between two requests, in seconds.
+            min_interval: The least time between two requests, in seconds; the
+                class's ``default_interval`` if not given.
             clock: A monotonic clock, replaceable in tests.
             sleep: Waits for a number of seconds, replaceable in tests.
         """
         self._client = client
-        self._min_interval = min_interval
+        self._min_interval = (
+            self.default_interval if min_interval is None else min_interval
+        )
         self._clock = clock
         self._sleep = sleep
         self._lock = asyncio.Lock()
         self._last_request: float | None = None
         self._blocked_until: float | None = None
         self._refusals = 0
+        self._sent = 0
+
+    @property
+    def requests_sent(self) -> int:
+        """How many requests this fetcher has sent, refused ones included."""
+        return self._sent
 
     async def get(self, url: str) -> FetchedPage:
         """Fetch one page.
@@ -163,6 +176,7 @@ class PoliteFetcher:
 
     async def _fetch(self, url: str) -> FetchedPage:
         self._last_request = self._clock()
+        self._sent += 1
         started = time.perf_counter()
         path = urlsplit(url).path
         status: int | None = None
