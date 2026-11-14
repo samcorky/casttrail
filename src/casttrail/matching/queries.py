@@ -72,3 +72,46 @@ async def relevant_appearances(
             RelevantAppearance(name, convention, kind, reason),
         )
     return list(best.values())
+
+
+@dataclass(frozen=True)
+class WatchedGuest:
+    """A person the user watches who is a guest at a convention."""
+
+    name: str
+    kind: str
+
+
+async def watched_guests(
+    session: AsyncSession, user_id: uuid.UUID, convention_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, list[WatchedGuest]]:
+    """List the people a user watches at each of some conventions.
+
+    Only this user's matches are read. A person two sources list counts once, as
+    confirmed if either match is.
+
+    Args:
+        session: The database session.
+        user_id: The signed-in user.
+        convention_ids: The conventions to look at.
+
+    Returns:
+        For each convention with any, its watched guests, confirmed first, then by name.
+    """
+    if not convention_ids:
+        return {}
+    rows = await session.execute(
+        select(Appearance.convention_id, Person.id, Person.name, Match.kind)
+        .join(Match, Match.appearance_id == Appearance.id)
+        .join(Person, Person.id == Match.person_id)
+        .where(Match.user_id == user_id, Appearance.convention_id.in_(convention_ids))
+        .order_by(Match.kind, Person.name, Person.id)
+    )
+    # "confirmed" sorts before "possible", so the first row per person is the surest.
+    best: dict[tuple[uuid.UUID, uuid.UUID], WatchedGuest] = {}
+    for convention_id, person_id, name, kind in rows:
+        best.setdefault((convention_id, person_id), WatchedGuest(name, kind))
+    found: dict[uuid.UUID, list[WatchedGuest]] = {}
+    for (convention_id, _), guest in best.items():
+        found.setdefault(convention_id, []).append(guest)
+    return found

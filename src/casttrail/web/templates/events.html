@@ -12,14 +12,15 @@
   {% endif %}
 </div>
 <p class="text-body-secondary">
-  These are the conventions found for the people being watched. Nothing here is
-  guessed: a missing date, place or status is shown as unknown.
+  These are the conventions found for the people being watched. <strong>Watching</strong>
+  counts the people you watch at each one; <em>possible</em> means only the name
+  matched. Nothing here is guessed: a missing date, place or status is shown as unknown.
 </p>
 {% if rows %}
 <div class="table-responsive">
   <table class="table table-hover align-middle">
     <thead>
-      <tr><th>Event</th><th class="d-none d-md-table-cell">When</th><th class="d-none d-md-table-cell">Where</th><th>Status</th><th class="text-end">Guests</th></tr>
+      <tr><th>Event</th><th class="d-none d-md-table-cell">When</th><th class="d-none d-md-table-cell">Where</th><th>Status</th><th class="text-end">Watching</th><th class="text-end">Guests</th></tr>
     </thead>
     <tbody>
       {% for row in rows %}
@@ -28,10 +29,17 @@
           <a href="/events/{{ row.convention.id }}">{{ row.convention.name }}</a>
           {# On a phone the date and place sit under the name, so no column is lost. #}
           <div class="d-md-none small text-body-secondary">{{ dates(row.convention) }} · {{ place(row.convention) }}</div>
+          {% set mine = watched.get(row.convention.id, []) %}
+          {% if mine %}
+          <div class="small">You watch:
+            {% for guest in mine %}{{ guest.name }}{% if guest.kind == "possible" %} <span class="text-body-secondary">(possible)</span>{% endif %}{% if not loop.last %}, {% endif %}{% endfor %}
+          </div>
+          {% endif %}
         </td>
         <td class="d-none d-md-table-cell">{{ dates(row.convention) }}</td>
         <td class="d-none d-md-table-cell">{{ place(row.convention) }}</td>
         <td>{{ status(row.convention.status) }}</td>
+        <td class="text-end">{% if mine %}<span class="badge text-bg-primary">{{ mine | length }}</span>{% else %}<span class="text-body-secondary">0</span>{% endif %}</td>
         <td class="text-end">{{ row.guests }}</td>
       </tr>
       {% endfor %}

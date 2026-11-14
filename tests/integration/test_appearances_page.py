@@ -18,7 +18,7 @@ from casttrail.identity.decisions import DecisionService
 from casttrail.identity.models import ExternalIdentity
 from casttrail.main import create_app
 from casttrail.matching.models import Match
-from casttrail.matching.queries import relevant_appearances
+from casttrail.matching.queries import relevant_appearances, watched_guests
 from casttrail.matching.service import MatchService
 from casttrail.providers.base import (
     CastMember,
@@ -367,3 +367,99 @@ async def _watch_id(database_url: str) -> uuid.UUID:
     await engine.dispose()
     assert found is not None
     return found
+
+
+# --- the events list names who you watch ------------------------------------------
+
+
+def test_the_events_list_counts_and_names_the_people_you_watch(
+    client: TestClient,
+) -> None:
+    _sign_in(client, "alice@example.com")
+
+    page = client.get("/events?scope=all").text
+
+    assert '<th class="text-end">Watching</th>' in page
+    assert "You watch:" in page
+    assert "Eddie McClintock" in page
+    assert "(possible)" in page
+    assert '<span class="badge text-bg-primary">1</span>' in page
+
+
+def test_the_events_list_shows_no_one_else_s_watches(client: TestClient) -> None:
+    _sign_in(client, "bob@example.com")
+
+    page = client.get("/events?scope=all").text
+
+    assert "Soon Con" in page
+    assert "You watch:" not in page
+    assert "badge text-bg-primary" not in page
+
+
+async def test_watched_guests_counts_a_person_once_and_prefers_confirmed(
+    db_session: AsyncSession,
+) -> None:
+    auth = AuthService(db_session, session_ttl=timedelta(hours=1))
+    user = await auth.create_user(
+        email="u@example.com", display_name="U", password=PASSWORD
+    )
+    other = await auth.create_user(
+        email="o@example.com", display_name="O", password=PASSWORD
+    )
+    user_id, other_id = user.id, other.id
+    con = Convention(
+        id=uuid.uuid4(),
+        name="C",
+        start_date=TODAY,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    quiet = Convention(
+        id=uuid.uuid4(),
+        name="Q",
+        start_date=TODAY,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    zed = Person(id=uuid.uuid4(), name="Zed")
+    amy = Person(id=uuid.uuid4(), name="Amy")
+    db_session.add_all([con, quiet, zed, amy])
+    await db_session.flush()
+    # Zed is listed by two sources: possible in one, confirmed in the other. Amy is
+    # possible. Another user's match must not show.
+    for key, person, kind, owner in (
+        ("zed-r", zed, "possible", user_id),
+        ("zed-c", zed, "confirmed", user_id),
+        ("amy", amy, "possible", user_id),
+        ("amy-o", amy, "confirmed", other_id),
+    ):
+        identity = ExternalIdentity(
+            id=uuid.uuid4(), provider="rostercon", external_id=key
+        )
+        db_session.add(identity)
+        await db_session.flush()
+        appearance = Appearance(
+            id=uuid.uuid4(), convention_id=con.id, external_identity_id=identity.id
+        )
+        db_session.add(appearance)
+        await db_session.flush()
+        db_session.add(
+            Match(
+                user_id=owner,
+                appearance_id=appearance.id,
+                person_id=person.id,
+                match_key=f"person:{person.id}",
+                kind=kind,
+                reason="r",
+            )
+        )
+    await db_session.commit()
+
+    found = await watched_guests(db_session, user_id, [con.id, quiet.id])
+
+    assert [(g.name, g.kind) for g in found[con.id]] == [
+        ("Zed", "confirmed"),
+        ("Amy", "possible"),
+    ]
+    assert quiet.id not in found
+    assert await watched_guests(db_session, user_id, []) == {}

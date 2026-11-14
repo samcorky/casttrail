@@ -203,6 +203,13 @@ def _summary(text: str | None) -> dict[str, object]:
     return value if isinstance(value, dict) else {}
 
 
+def _join(names: list[str]) -> str:
+    """Write names as a list in a sentence: ``A``, ``A and B``, ``A, B and C``."""
+    if len(names) <= 1:
+        return "".join(names)
+    return f"{', '.join(names[:-1])} and {names[-1]}"
+
+
 @router.get("/refresh", response_class=HTMLResponse)
 async def refresh_page(
     request: Request,
@@ -235,6 +242,7 @@ async def refresh_page(
         "runs": runs,
         # While a run is going, the list reloads itself to show how far it has got.
         "running": any(run.status == "running" for run in found),
+        "sources": _join(list(SOURCE_LABELS.values())),
         "notice": _NOTICES.get(notice or ""),
         "schedule": request.app.state.settings,
     }

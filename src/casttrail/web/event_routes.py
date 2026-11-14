@@ -6,6 +6,7 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, Response
 
 from casttrail.discovery.browse import event_detail, upcoming_events
+from casttrail.matching.queries import watched_guests
 from casttrail.web.dependencies import CurrentUser, SessionDep
 from casttrail.web.errors import PageError
 from casttrail.web.routes import templates
@@ -23,6 +24,8 @@ async def events(
 ) -> Response:
     """List upcoming conventions, UK ones unless asked for all.
 
+    Each row names the people this user watches at that convention.
+
     Args:
         request: The current request.
         user: The signed-in user.
@@ -37,9 +40,11 @@ async def events(
     rows, more = await upcoming_events(
         session, today=datetime.now(UTC).date(), uk_only=uk_only, page=page
     )
+    watched = await watched_guests(session, user.id, [r.convention.id for r in rows])
     context = {
         "user": user,
         "rows": rows,
+        "watched": watched,
         "uk_only": uk_only,
         "page": page,
         "more": more,
