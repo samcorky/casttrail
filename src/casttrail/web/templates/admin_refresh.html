@@ -6,9 +6,9 @@
 <div class="alert alert-info" role="status"><strong>{{ notice }}</strong></div>
 {% endif %}
 <p>
-  This looks up the people anyone is watching on Rostercon and on Comiconomicon and
-  stores the conventions they are listed for. Each site is asked slowly, one after the
-  other, so a run can take many minutes.
+  This looks up the people anyone is watching on {{ sources }} and stores the
+  conventions they are listed for. Each site is asked slowly, one after the other, so a
+  run can take many minutes.
   {% if schedule.refresh_enabled %}
   It also runs by itself every day at {{ "%02d"|format(schedule.refresh_hour) }}:00 server time.
   {% else %}
