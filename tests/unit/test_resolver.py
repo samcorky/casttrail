@@ -39,7 +39,9 @@ def test_a_link_made_by_hand_beats_everything() -> None:
         rejected_person_ids=frozenset({other}),
     )
 
-    assert resolve(guest, [PAUL]) == Resolution("manual", other, "Linked by hand.")
+    assert resolve(guest, [PAUL]) == Resolution(
+        "manual", other, "Confirmed in Review guests."
+    )
 
 
 def test_a_shared_id_beats_a_name() -> None:
@@ -68,7 +70,9 @@ def test_an_empty_id_never_matches() -> None:
 def test_an_exact_name_is_only_possible_never_confirmed() -> None:
     result = resolve(Guest(name="paul  MCGANN"), [PAUL, SEAN])
 
-    assert result == Resolution("possible", PAUL.person_id, "Same name.")
+    assert result == Resolution(
+        "possible", PAUL.person_id, "Same name only, so it may be someone else."
+    )
 
 
 def test_accents_and_punctuation_do_not_stop_a_match() -> None:

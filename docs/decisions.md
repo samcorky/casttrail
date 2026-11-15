@@ -495,3 +495,8 @@ The app is meant to run in Docker. Files: `Dockerfile`, `compose.yaml`, `.docker
 - **What changed:** `RefreshAll` starts every source at once (`asyncio.gather` with `return_exceptions=True`) and waits for them all. Each source still has its own fetcher, so neither site is asked any faster, and its own lock and database session.
 - **Unchanged:** a refusal or crash in one source never stops the others; the first failure (in source order) is raised once all are done; the first report in source order is returned; stopping the app cancels every source, and each records "Interrupted".
 - **The database:** both write, but only in short transactions after each page (no transaction is held across a request), so they rarely meet on SQLite's single write lock, and the 5 s busy timeout covers it when they do.
+
+## My appearances: UK by default, and reasons written for the reader (2026-11-14)
+
+- **UK only unless asked:** My appearances now has the events page's switch (`scope=all`), with the same rule: UK by default, and a convention with no known country shows only under all countries. It had listed every country, unlike the events page.
+- **Reasons:** a match's "why" is read by the person whose watch it is, not the admin who reviewed it. "Linked by hand." is now "Confirmed in Review guests.", "Same name." is "Same name only, so it may be someone else.", and "Same rostercon id." is "Both have the same rostercon id.". Reasons are stored on each match, and the next rematch (every refresh) rewrites old ones.

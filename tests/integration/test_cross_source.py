@@ -326,7 +326,9 @@ async def test_a_person_at_a_merged_event_is_shown_once_with_the_surest_match(
         )
     await db_session.commit()
 
-    rows = await relevant_appearances(db_session, user_id, today=date(2027, 4, 1))
+    rows = await relevant_appearances(
+        db_session, user_id, today=date(2027, 4, 1), uk_only=False
+    )
 
     assert [(r.person_name, r.kind) for r in rows] == [("Andrew Jackson", "confirmed")]
 

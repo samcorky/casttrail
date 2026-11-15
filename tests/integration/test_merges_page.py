@@ -261,7 +261,7 @@ def test_merging_keeps_a_watched_persons_match_pointing_at_the_kept_event(
     before = asyncio.run(_state(database_url))[2]
 
     client.post(f"/admin/merges/{facts.pair}/merge", data={"keep": str(facts.two)})
-    page = client.get("/appearances").text
+    page = client.get("/appearances", params={"scope": "all"}).text
 
     assert before == 1
     assert "Amy Pond" in page

@@ -68,20 +68,26 @@ def resolve(guest: Guest, candidates: Iterable[Candidate]) -> Resolution:
         The resolution.
     """
     if guest.linked_person_id is not None:
-        return Resolution("manual", guest.linked_person_id, "Linked by hand.")
+        return Resolution(
+            "manual", guest.linked_person_id, "Confirmed in Review guests."
+        )
     allowed = [c for c in candidates if c.person_id not in guest.rejected_person_ids]
     for candidate in allowed:
         for provider, value in guest.identifiers.items():
             if value and candidate.identifiers.get(provider) == value:
                 return Resolution(
-                    "shared_id", candidate.person_id, f"Same {provider} id."
+                    "shared_id",
+                    candidate.person_id,
+                    f"Both have the same {provider} id.",
                 )
     wanted = normalise_name(guest.name or "")
     if not wanted:
         return Resolution("unresolved", None, "The guest has no name.")
     same = [c for c in allowed if normalise_name(c.name) == wanted]
     if len(same) == 1:
-        return Resolution("possible", same[0].person_id, "Same name.")
+        return Resolution(
+            "possible", same[0].person_id, "Same name only, so it may be someone else."
+        )
     if len(same) > 1:
         return Resolution("unresolved", None, "Several watched people have this name.")
     return Resolution("unresolved", None, "No watched person has this name.")
