@@ -200,7 +200,7 @@ Revisit these only after WP-8, each as its own slice.
 
 **Planned, from the build.**
 - *Bootstrap 5.3 instead of Pico:* **done** (A5, issue #50). Vendored 5.3.8, not the 6.0 alpha.
-- *Catch-up refresh at startup.* If the refresh is on and the last success is over a day old, run it after the app is up, as the startup backup does. Preferred over an APScheduler SQLAlchemy jobstore, whose pickled jobs cannot carry our live objects and which needs a table outside our migrations.
+- *Catch-up refresh at startup:* **done** (A6). Preferred over an APScheduler SQLAlchemy jobstore, whose pickled jobs cannot carry our live objects and which needs a table outside our migrations.
 - *Restore from the admin page and an off-machine copy of backups.* Restore is a documented manual step for now.
 - *Building and publishing the Docker image in CI.*
 - *GitHub issue templates* (issue #51).
@@ -216,6 +216,7 @@ Still open:
 4. (For WP-6) Which channels besides ntfy, and in what order: SMTP, Web Push?
 5. (For 6.4, moved from 5.5d) How a watched film or series finds its Comiconomicon film page beyond an exact title and year match, and whether its `/universe` pages are worth using for franchise watches.
 6. Whether the daily refresh should be on by default (it is off, so nothing contacts a source until the owner chooses).
+7. (For A16) Which outside services the map may use. Recommended: Nominatim for geocoding (server side, a handful of requests per new venue, cached for good) and OpenStreetMap's own tiles in the browser (fine at 2-3 users with attribution, but each viewer's browser asks `tile.openstreetmap.org` directly). Alternatives: an offline UK place list (OS Open Names or ONS, open licences) instead of Nominatim, which places towns but not venues; and a self-hosted or paid tile server instead of OSM's, if tile requests leaving the browser are unwanted.
 
 ## 11. Chunk checklist
 
@@ -303,6 +304,10 @@ Still open:
 - [x] A13 A run that is cut off (a refusal, a restart) resumes where it was cut instead of starting again at the first person: look up the people not refreshed for longest first, and cap the people (or requests) per run so a long watch list always makes progress inside Rostercon's limit of about 25 requests in 30 minutes. Record when each person was last refreshed 🗄️ 🧪 (as built: Rostercon asked 75 s apart, a request cap per source, progress saved per person in `refresh_progress`, and the Refresh page shows a running run's count live; see `docs/decisions.md`)
 - [x] A14 The Rostercon pages admin page is now **Source pages** and generic: a column per source (Rostercon and Comiconomicon today), each with its own address check, the same set-by-hand and remove rules, and the same states. A new source (Wikipedia, say) is one `LinkSource` definition in `discovery/links.py` (name, example address, parser), not a new page. A Comiconomicon link set here is honoured by `GuestLookup` 🧪 👁️ DEMO
 - [x] A15 Review guests links each guest to its page on the source (Rostercon or Comiconomicon), in the waiting, linked and search tables, so a reviewer can check who a guest is before confirming 🧪
+- [ ] A16 **Map view:** an actual map of upcoming conventions, so it is clear at a glance which ones are near and which have someone you watch. Conventions today hold only text (`venue`, often one free-text line from Rostercon, plus `city`, `region`, `country`), so it comes in three chunks. Nothing is guessed: a convention with no trusted point is not drawn, and is listed under the map as "place unknown" (open question 7 covers the outside services).
+  - [ ] A16a **Place to point** 🗄️ 🧪: a convention gets `latitude`, `longitude`, the text it was found from and how (`lookup` or `manual`). A geocoder provider (OpenStreetMap's Nominatim, recommended) turns the place text into a point: data only, no database, like the other providers. It is asked after a refresh has stored its events, only for conventions whose place text is new or changed, never while a transaction is open, at most once a second with the app's own User-Agent (Nominatim's usage policy). Answers are kept by normalised place text, so a venue used every year is asked once, and "not found" is kept too. A UK convention only accepts a point inside the UK (`countrycodes=gb`); anything else stays unknown. A point set by hand is never replaced.
+  - [ ] A16b **Fix a point by hand** 🧪 👁️ DEMO: on the event page an admin can set a convention's point (paste `lat, lon`, or pick it on a small map) or clear a wrong one, as Source pages does for people (A10, A14). Source health counts conventions with no point.
+  - [ ] A16c **The map page** (`/map`) 🧪 👁️ DEMO: Leaflet, vendored in `web/static` like Bootstrap (no CDN), on OpenStreetMap tiles with their attribution. One marker per upcoming convention, UK by default with the events page's all-countries switch. A marker shows whether you watch someone there (confirmed, possible, or nobody), and its popup has the name, dates, the people you watch and a link to the event page. An "only mine" filter shows just the ones with someone you watch. Works on a phone (full-width map, the list of unplaced conventions below). The tiles are the only thing the browser loads from outside: if a Content-Security-Policy is added later it must allow the tile host.
 
 ### WP-6 ntfy alerts
 - [ ] 6.1 Notification tables and event keys 🗄️ 🧪
