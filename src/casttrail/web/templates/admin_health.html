@@ -55,7 +55,7 @@
 
 {% for s in sources %}
 <section class="mb-4">
-  <h2 class="h4">{{ s.provider|capitalize }}</h2>
+  <h2 class="h4">{{ s.label }}</h2>
   {% if s.warnings %}
   <div class="alert alert-warning" role="alert">
     <ul class="mb-0">

@@ -12,7 +12,13 @@ from starlette.testclient import TestClient
 
 from casttrail.auth.service import AuthService
 from casttrail.db import create_engine, create_session_factory
-from casttrail.discovery.health import STALE_AFTER, SourceHealth, rostercon_health
+from casttrail.discovery.health import (
+    COMICONOMICON,
+    ROSTERCON,
+    STALE_AFTER,
+    SourceHealth,
+    source_health,
+)
 from casttrail.discovery.models import (
     Convention,
     ConventionSource,
@@ -48,14 +54,14 @@ def _run(
 async def _health(session: AsyncSession, *runs: JobRun) -> SourceHealth:
     session.add_all(runs)
     await session.commit()
-    return await rostercon_health(session, now=NOW)
+    return await source_health(session, ROSTERCON, now=NOW)
 
 
 # --- the summary ------------------------------------------------------------------
 
 
 async def test_a_fresh_install_says_nothing_has_run(db_session: AsyncSession) -> None:
-    health = await rostercon_health(db_session, now=NOW)
+    health = await source_health(db_session, ROSTERCON, now=NOW)
 
     assert health.warnings == ["No refresh has run yet."]
     assert (health.conventions, health.last_run_at, health.last_success_at) == (
@@ -70,7 +76,7 @@ async def test_a_clean_recent_run_has_no_warnings(db_session: AsyncSession) -> N
     db_session.add(_run("succeeded", timedelta(hours=2), {"stopped": None}))
     await db_session.commit()
 
-    health = await rostercon_health(db_session, now=NOW)
+    health = await source_health(db_session, ROSTERCON, now=NOW)
 
     assert health.warnings == []
     assert health.last_run_status == "succeeded"
@@ -86,7 +92,7 @@ async def test_a_run_still_in_progress_is_not_judged(db_session: AsyncSession) -
     )
     await db_session.commit()
 
-    health = await rostercon_health(db_session, now=NOW)
+    health = await source_health(db_session, ROSTERCON, now=NOW)
 
     assert health.last_run_status == "succeeded"
     assert health.warnings == []
@@ -138,10 +144,13 @@ async def test_it_counts_stored_conventions_and_the_last_page_read(
     )
     await db_session.commit()
 
-    health = await rostercon_health(db_session, now=NOW)
+    health = await source_health(db_session, ROSTERCON, now=NOW)
+    second = await source_health(db_session, COMICONOMICON, now=NOW)
 
     assert health.conventions == 1
     assert health.last_page_at == NOW - timedelta(hours=1)
+    # Each source counts only what it supplied.
+    assert (second.conventions, second.last_page_at) == (1, NOW)
 
 
 @pytest.mark.parametrize(
@@ -199,7 +208,7 @@ async def test_a_missing_or_damaged_record_does_not_break_the_summary(
     )
     await db_session.commit()
 
-    health = await rostercon_health(db_session, now=NOW)
+    health = await source_health(db_session, ROSTERCON, now=NOW)
 
     assert health.warnings == []
 
@@ -251,9 +260,42 @@ async def test_other_jobs_are_ignored(db_session: AsyncSession) -> None:
     )
     await db_session.commit()
 
-    health = await rostercon_health(db_session, now=NOW)
+    health = await source_health(db_session, ROSTERCON, now=NOW)
 
     assert health.warnings == ["No refresh has run yet."]
+
+
+async def test_comiconomicon_is_judged_on_its_own_runs_and_named_in_its_warnings(
+    db_session: AsyncSession,
+) -> None:
+    db_session.add_all(
+        [
+            _run("succeeded", timedelta(hours=1), {}),
+            JobRun(
+                job="comiconomicon-refresh",
+                status="failed",
+                started_at=NOW - timedelta(hours=2),
+                summary=json.dumps({"events_unreadable": 1, "people_unmatched": 2}),
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    rostercon = await source_health(db_session, ROSTERCON, now=NOW)
+    comiconomicon = await source_health(db_session, COMICONOMICON, now=NOW)
+
+    assert rostercon.warnings == []
+    assert (comiconomicon.label, comiconomicon.failures_in_a_row) == (
+        "Comiconomicon",
+        1,
+    )
+    assert comiconomicon.last_run_status == "failed"
+    assert comiconomicon.warnings == [
+        "Some event pages could not be read. "
+        + "Comiconomicon may have changed its layout. Stored data was kept.",
+        "Some watched people have no single Comiconomicon page; skipped.",
+        "No refresh has succeeded recently.",
+    ]
 
 
 # --- the page ---------------------------------------------------------------------
@@ -313,8 +355,12 @@ def test_an_admin_sees_the_summary_and_its_warnings(
         client.post("/login", data={"email": "admin@example.com", "password": PASSWORD})
         page = client.get("/admin/health").text
 
-    assert "Rostercon" in page
-    assert "changed its layout" in page
+    rostercon = page[page.index('<h2 class="h4">Rostercon</h2>') :]
+    comiconomicon = rostercon[rostercon.index('<h2 class="h4">Comiconomicon</h2>') :]
+    rostercon = rostercon[: len(rostercon) - len(comiconomicon)]
+    assert "Rostercon may have changed its layout" in rostercon
+    assert "No refresh has run yet." in comiconomicon
+    assert "changed its layout" not in comiconomicon
     assert "Stored data was kept" in page
     assert "Failed refreshes in a row" in page
     assert 'href="/admin/health" aria-current="page"' in page

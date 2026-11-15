@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 import casttrail.maintenance as maintenance
 from casttrail.auth.errors import AccountError
-from casttrail.discovery.health import rostercon_health
+from casttrail.discovery.health import all_source_health
 from casttrail.discovery.schedule import SOURCE_LABELS, recent_runs, run_in_background
 from casttrail.startup import run_backup
 from casttrail.web.dependencies import (
@@ -306,7 +306,7 @@ async def source_health(
     )
     context = {
         "user": admin,
-        "sources": [await rostercon_health(session, now=datetime.now(UTC))],
+        "sources": await all_source_health(session, now=datetime.now(UTC)),
         "warnings": request.app.state.startup.warnings,
         "backups": backups,
         "backups_enabled": settings.backups_enabled,

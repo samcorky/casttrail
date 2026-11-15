@@ -214,7 +214,7 @@ Answered:
 
 Still open:
 4. (For WP-6) Which channels besides ntfy, and in what order: SMTP, Web Push?
-5. (For 5.5d) How a watched film or series finds its Comiconomicon film page beyond an exact title and year match, and whether its `/universe` pages are worth using for franchise watches.
+5. (For 6.4, moved from 5.5d) How a watched film or series finds its Comiconomicon film page beyond an exact title and year match, and whether its `/universe` pages are worth using for franchise watches.
 6. Whether the daily refresh should be on by default (it is off, so nothing contacts a source until the owner chooses).
 
 ## 11. Chunk checklist
@@ -285,7 +285,7 @@ Still open:
   - [x] 5.5a Parse the search answers and match a name exactly 🧪
   - [x] 5.5b Polite fetcher for Comiconomicon (shared with Rostercon in `providers/polite.py`) and a cached lookup for watched people (`source_lookups`) 🗄️ 🧪
   - [x] 5.5c Refresh from Comiconomicon for watched people (guest pages, then event pages), as a scheduled job and a button 🧪 (one **Refresh now** button and one daily timer run Rostercon and then Comiconomicon; each is its own run with its own lock)
-  - [ ] 5.5d Watched films and series through their film pages, and health for the second source 🧪
+  - [x] 5.5d Health for the second source: the Source health page shows Comiconomicon beside Rostercon, each judged on its own runs 🧪 (Watched films and series through Comiconomicon's film pages moved to 6.4 by the owner's decision: a film page lists events but not who, and a watched film cannot be matched to anyone before 6.4.)
 
 ### Added during the build (not in the original plan)
 - [x] A1 Settings read from a `.env` file, with `.env.example`; tests never read it (#54)
@@ -308,7 +308,7 @@ Still open:
 - [ ] 6.1 Notification tables and event keys 🗄️ 🧪
 - [ ] 6.2 ntfy adapter, admin-set server, random user topic, test button
 - [ ] 6.3 Outbox worker with retries and crash recovery 🧪
-- [ ] 6.4 Baseline sync suppression, future-only events, top-billed expansion 🧪
+- [ ] 6.4 Baseline sync suppression, future-only events, top-billed expansion 🧪 Also watched films and series through Comiconomicon's film pages (`/videomedia/<id>`, found by exact title and year), moved here from 5.5d
 - [ ] 6.5 Delivery status page 👁️ DEMO
 - [ ] ⛔ GATE: re-ingest sends nothing, a failed send retries, 95% coverage on notifications
 
