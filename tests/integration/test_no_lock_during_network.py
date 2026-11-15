@@ -217,6 +217,8 @@ class BlockingFetcher:
         self.reached = asyncio.Event()
         self.release = asyncio.Event()
         self.requests_sent = 0
+        self.waited_s = 0.0
+        self.answering_s = 0.0
 
     async def get(self, url: str) -> object:
         self.reached.set()

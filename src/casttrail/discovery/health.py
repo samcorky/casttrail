@@ -5,16 +5,20 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import func, select
 
+from casttrail.catalogue.models import Person
 from casttrail.discovery.comiconomicon_refresh import JOB as COMICONOMICON_JOB
 from casttrail.discovery.models import (
     Convention,
     ConventionSource,
     JobRun,
+    SourceLookup,
     SourceObservation,
 )
 from casttrail.discovery.refresh import JOB as ROSTERCON_JOB
+from casttrail.discovery.source_refresh import STEPS
 from casttrail.providers.comiconomicon import PROVIDER_ID as COMICONOMICON_ID
 from casttrail.providers.rostercon import PROVIDER_ID as ROSTERCON_ID
+from casttrail.watching.models import Watch
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -39,6 +43,27 @@ COMICONOMICON = Source(COMICONOMICON_ID, COMICONOMICON_JOB, "Comiconomicon")
 SOURCES = (ROSTERCON, COMICONOMICON)
 
 
+# How each step is named on the page, and why a name lookup placed nobody.
+STEP_LABELS = {
+    "lookup": "Name lookup",
+    "person_page": "Person page",
+    "event_list": "Event list",
+    "event_pages": "Event pages",
+}
+_SKIPPED_WHY = {"not_found": "not found", "ambiguous": "several found"}
+
+
+@dataclass(frozen=True)
+class StepSummary:
+    """One step of the last run: how often it ran and where its time went."""
+
+    label: str
+    count: int
+    requests: int
+    waited_s: float
+    answering_s: float
+
+
 @dataclass(frozen=True)
 class SourceHealth:
     """How one source is doing, worked out from what was recorded."""
@@ -52,6 +77,9 @@ class SourceHealth:
     last_success_at: datetime | None
     failures_in_a_row: int
     warnings: list[str] = field(default_factory=list)
+    # How long the last run took, and its steps in the order a person goes through.
+    last_run_duration_s: float | None = None
+    steps: list[StepSummary] = field(default_factory=list)
 
 
 def _counts(run: JobRun) -> dict[str, object]:
@@ -67,8 +95,64 @@ def _number(counts: dict[str, object], key: str) -> int:
     return value if isinstance(value, int) and not isinstance(value, bool) else 0
 
 
+def _seconds(value: object) -> float:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return 0.0
+    return float(value)
+
+
+def _steps(counts: dict[str, object]) -> list[StepSummary]:
+    """Read the run's step timings, ignoring anything not as it was written."""
+    raw = counts.get("steps")
+    if not isinstance(raw, dict):
+        return []
+    found: list[StepSummary] = []
+    for name in STEPS:
+        step = raw.get(name)
+        if not isinstance(step, dict):
+            continue
+        found.append(
+            StepSummary(
+                label=STEP_LABELS[name],
+                count=_number(step, "count"),
+                requests=_number(step, "requests"),
+                waited_s=_seconds(step.get("waited_s")),
+                answering_s=_seconds(step.get("answering_s")),
+            )
+        )
+    return found
+
+
+async def _skipped(session: AsyncSession, provider: str) -> list[str]:
+    """Name the watched people this source's lookup could not place, and why."""
+    rows = await session.execute(
+        select(Person.name, SourceLookup.outcome)
+        .join(SourceLookup, SourceLookup.person_id == Person.id)
+        .where(
+            SourceLookup.provider == provider,
+            SourceLookup.outcome.in_(_SKIPPED_WHY),
+            Person.id.in_(select(Watch.person_id)),
+        )
+        .order_by(Person.name)
+    )
+    return [f"{name} ({_SKIPPED_WHY[outcome]})" for name, outcome in rows]
+
+
+def _skipped_warning(label: str, skipped: list[str]) -> str:
+    """Say who has no single page on the source, naming them when they are known."""
+    if not skipped:
+        return f"Some watched people have no single {label} page; skipped."
+    names = ", ".join(skipped)
+    lead = f"These watched people have no single {label} page and were skipped"
+    return f"{lead}: {names}. A page can be set by hand on Source pages."
+
+
 def _warnings(
-    label: str, last: JobRun | None, success: JobRun | None, now: datetime
+    label: str,
+    last: JobRun | None,
+    success: JobRun | None,
+    now: datetime,
+    skipped: list[str],
 ) -> list[str]:
     """Say, in plain words, what looks wrong with a source's latest runs."""
     if last is None:
@@ -84,7 +168,7 @@ def _warnings(
     if _number(counts, "events_failed") or _number(counts, "people_failed"):
         found.append("Some pages could not be fetched in the last refresh.")
     if _number(counts, "people_ambiguous") or _number(counts, "people_unmatched"):
-        found.append(f"Some watched people have no single {label} page; skipped.")
+        found.append(_skipped_warning(label, skipped))
     if success is None:
         found.append("No refresh has succeeded recently.")
     elif now - success.started_at > STALE_AFTER:
@@ -152,7 +236,13 @@ async def source_health(
             break
         streak += 1
 
-    warnings = _warnings(source.label, last, success, now)
+    skipped = await _skipped(session, source.provider)
+    warnings = _warnings(source.label, last, success, now, skipped)
+    duration = (
+        (last.finished_at - last.started_at).total_seconds()
+        if last is not None and last.finished_at is not None
+        else None
+    )
     return SourceHealth(
         provider=source.provider,
         label=source.label,
@@ -163,4 +253,6 @@ async def source_health(
         last_success_at=success.started_at if success else None,
         failures_in_a_row=streak,
         warnings=warnings,
+        last_run_duration_s=duration,
+        steps=_steps(_counts(last)) if last is not None else [],
     )

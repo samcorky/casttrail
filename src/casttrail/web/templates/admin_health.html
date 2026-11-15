@@ -69,9 +69,30 @@
     <dt class="col-sm-4 col-lg-3">Conventions stored</dt><dd class="col-sm-8 col-lg-9">{{ s.conventions }}</dd>
     <dt class="col-sm-4 col-lg-3">Last page read</dt><dd class="col-sm-8 col-lg-9">{{ s.last_page_at.strftime("%Y-%m-%d %H:%M") ~ " UTC" if s.last_page_at else "Never" }}</dd>
     <dt class="col-sm-4 col-lg-3">Last refresh</dt><dd class="col-sm-8 col-lg-9">{% if s.last_run_at %}{{ s.last_run_at.strftime("%Y-%m-%d %H:%M") }} UTC, {{ s.last_run_status }}{% else %}Never{% endif %}</dd>
+    {% if s.last_run_duration_s is not none %}<dt class="col-sm-4 col-lg-3">Last refresh took</dt><dd class="col-sm-8 col-lg-9">{{ s.last_run_duration_s|duration }}</dd>{% endif %}
     <dt class="col-sm-4 col-lg-3">Last successful refresh</dt><dd class="col-sm-8 col-lg-9">{{ s.last_success_at.strftime("%Y-%m-%d %H:%M") ~ " UTC" if s.last_success_at else "Never" }}</dd>
     <dt class="col-sm-4 col-lg-3">Failed refreshes in a row</dt><dd class="col-sm-8 col-lg-9">{{ s.failures_in_a_row }}</dd>
   </dl>
+  {% if s.steps %}
+  <h3 class="h6">Where the last refresh's time went</h3>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle">
+      <thead><tr><th>Step</th><th class="text-end">Times</th><th class="text-end">Requests</th><th class="text-end">Waiting its turn</th><th class="text-end">Site answering</th></tr></thead>
+      <tbody>
+        {% for step in s.steps %}
+        <tr>
+          <td>{{ step.label }}</td>
+          <td class="text-end">{{ step.count }}</td>
+          <td class="text-end">{{ step.requests }}</td>
+          <td class="text-end">{{ step.waited_s|duration }}</td>
+          <td class="text-end">{{ step.answering_s|duration }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="text-body-secondary"><small>Waiting its turn is the gap kept between requests so the site is not overloaded. It is on purpose.</small></p>
+  {% endif %}
   <p><a href="/admin/refresh">Refresh runs</a></p>
 </section>
 {% endfor %}

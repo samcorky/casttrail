@@ -61,7 +61,8 @@ class ComiconomiconRefresh(SourceRefresh[ComiconomiconFetcher]):
             return {}
         assert guest.source_url is not None
         try:
-            page = await self._fetcher.get(guest.source_url)
+            async with self._step("person_page", report):
+                page = await self._fetcher.get(guest.source_url)
         except ComiconomiconUnavailableError:
             raise
         except ProviderError as error:
@@ -101,7 +102,8 @@ class ComiconomiconRefresh(SourceRefresh[ComiconomiconFetcher]):
     ) -> SourceLookup | None:
         """Find the person's guest; count and log it unless exactly one is theirs."""
         try:
-            guest = await lookup.find(person_id, name)
+            async with self._step("lookup", report):
+                guest = await lookup.find(person_id, name)
         except ComiconomiconUnavailableError:
             raise
         except ProviderError as error:

@@ -1324,3 +1324,94 @@ async def test_what_another_source_has_done_does_not_change_the_order(
 
     # Rostercon has done neither, so Paul is first by name.
     assert _people_asked(server)[0] == PAUL_URL
+
+
+# --- timing (A9) -------------------------------------------------------------------
+
+
+def _steps(run: JobRun) -> dict[str, tuple[int, int]]:
+    steps = json.loads(run.summary or "{}")["steps"]
+    return {name: (step["count"], step["requests"]) for name, step in steps.items()}
+
+
+async def test_the_run_records_each_step_with_its_requests(
+    db_session: AsyncSession, server: FakeRostercon, users: tuple[User, User]
+) -> None:
+    await _watch(db_session, users[0])
+
+    await _refresh(db_session, server).run()
+    first = await _only_run(db_session)
+    await _refresh(db_session, server).run()
+    second = await db_session.scalar(select(JobRun).where(JobRun.id != first.id))
+    assert second is not None
+
+    # The first run finds Paul by name; the second asks for his page directly.
+    assert _steps(first) == {
+        "lookup": (1, 3),
+        "event_list": (1, 1),
+        "event_pages": (2, 2),
+    }
+    assert _steps(second) == {
+        "person_page": (1, 1),
+        "event_list": (1, 1),
+        "event_pages": (2, 2),
+    }
+    # Every request sent belongs to one step.
+    total = sum(
+        requests for _, requests in [*_steps(first).values(), *_steps(second).values()]
+    )
+    assert total == len(server.requests)
+
+
+async def test_each_person_refreshed_is_logged_with_how_long_it_took(
+    db_session: AsyncSession, server: FakeRostercon, users: tuple[User, User]
+) -> None:
+    await _watch(db_session, users[0])
+
+    with structlog.testing.capture_logs() as logs:
+        await _refresh(db_session, server).run()
+
+    [line] = [log for log in logs if log["event"] == "person_refreshed"]
+    assert (line["source"], line["person"]) == ("rostercon", "Paul McGann")
+    assert line["requests"] == len(server.requests)
+    assert line["duration_ms"] >= 0
+
+
+class SlowSite:
+    """A fake monotonic clock: Rostercon takes a second to answer each request."""
+
+    def __init__(self, server: FakeRostercon) -> None:
+        self.now = 0.0
+        self._server = server
+
+    def clock(self) -> float:
+        return self.now
+
+    async def sleep(self, seconds: float) -> None:
+        self.now += seconds
+
+    def handler(self, request: httpx2.Request) -> httpx2.Response:
+        self.now += 1.0
+        return self._server.handler(request)
+
+
+async def test_each_step_splits_waiting_its_turn_from_the_site_answering(
+    db_session: AsyncSession, server: FakeRostercon, users: tuple[User, User]
+) -> None:
+    await _watch(db_session, users[0])
+    site = SlowSite(server)
+    client = create_client(transport=httpx2.MockTransport(site.handler))
+    fetcher = RosterconFetcher(
+        client, min_interval=10.0, clock=site.clock, sleep=site.sleep
+    )
+
+    await RosterconRefresh(db_session, fetcher, now=Clock()).run()
+
+    steps = json.loads((await _only_run(db_session)).summary or "{}")["steps"]
+    times = {name: (s["waited_s"], s["answering_s"]) for name, s in steps.items()}
+    # Each answer takes 1 s, so each later request waits the other 9 s of the 10.
+    assert times == {
+        "lookup": (18.0, 3.0),
+        "event_list": (9.0, 1.0),
+        "event_pages": (18.0, 2.0),
+    }

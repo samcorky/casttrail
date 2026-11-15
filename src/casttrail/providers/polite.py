@@ -123,11 +123,23 @@ class PoliteFetcher:
         self._blocked_until: float | None = None
         self._refusals = 0
         self._sent = 0
+        self._waited = 0.0
+        self._answering = 0.0
 
     @property
     def requests_sent(self) -> int:
         """How many requests this fetcher has sent, refused ones included."""
         return self._sent
+
+    @property
+    def waited_s(self) -> float:
+        """Seconds this fetcher has spent waiting for its turn (the spacing)."""
+        return self._waited
+
+    @property
+    def answering_s(self) -> float:
+        """Seconds the site has taken to answer, refusals and failures included."""
+        return self._answering
 
     async def get(self, url: str) -> FetchedPage:
         """Fetch one page.
@@ -173,10 +185,17 @@ class PoliteFetcher:
                     "source_spacing", source=self.source, wait_s=round(wait, 1)
                 )
                 await self._sleep(wait)
+                self._waited += wait
 
     async def _fetch(self, url: str) -> FetchedPage:
-        self._last_request = self._clock()
+        started = self._last_request = self._clock()
         self._sent += 1
+        try:
+            return await self._fetch_counted(url)
+        finally:
+            self._answering += self._clock() - started
+
+    async def _fetch_counted(self, url: str) -> FetchedPage:
         started = time.perf_counter()
         path = urlsplit(url).path
         status: int | None = None
