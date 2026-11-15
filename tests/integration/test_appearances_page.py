@@ -13,6 +13,7 @@ from starlette.testclient import TestClient
 from casttrail.auth.service import AuthService
 from casttrail.catalogue.models import Person
 from casttrail.db import create_engine, create_session_factory
+from casttrail.discovery.browse import UK
 from casttrail.discovery.models import Appearance, AppearanceSource, Convention
 from casttrail.identity.decisions import DecisionService
 from casttrail.identity.models import ExternalIdentity
@@ -87,6 +88,7 @@ async def _seed_async(database_url: str, *, match: bool = True) -> None:
         await WatchService(session).watch_person(alice_id, EDDIE)
         soon = Convention(
             id=uuid.uuid4(),
+            country=UK,
             name="Soon Con",
             start_date=TODAY + timedelta(days=5),
             city="Lincoln",
@@ -95,6 +97,7 @@ async def _seed_async(database_url: str, *, match: bool = True) -> None:
         )
         gone = Convention(
             id=uuid.uuid4(),
+            country=UK,
             name="Gone Con",
             start_date=TODAY - timedelta(days=60),
             created_at=datetime.now(UTC),
@@ -102,6 +105,7 @@ async def _seed_async(database_url: str, *, match: bool = True) -> None:
         )
         undated = Convention(
             id=uuid.uuid4(),
+            country=UK,
             name="Undated Con",
             created_at=datetime.now(UTC),
             updated_at=datetime.now(UTC),
@@ -176,7 +180,7 @@ def test_a_user_sees_their_own_matches_soonest_first_with_the_reason(
     assert page.index("Soon Con") < page.index("Undated Con")
     assert "Gone Con" not in page
     assert "Possible" in page
-    assert "Same name." in page
+    assert "Same name only, so it may be someone else." in page
     assert "Date unknown" in page
     assert "(<strong>Cancelled</strong>)" in page
     assert 'href="/events/' in page
@@ -261,8 +265,8 @@ def test_confirming_a_guest_changes_the_label_on_the_page(
         page = client.get("/appearances").text
 
     assert "Confirmed" in page
-    assert "Linked by hand." in page
-    assert "Same name." not in page
+    assert "Confirmed in Review guests." in page
+    assert "Same name only, so it may be someone else." not in page
 
 
 async def test_the_query_orders_confirmed_before_possible_on_one_day(
@@ -275,6 +279,7 @@ async def test_the_query_orders_confirmed_before_possible_on_one_day(
     user_id = user.id
     con = Convention(
         id=uuid.uuid4(),
+        country=UK,
         name="C",
         start_date=TODAY,
         created_at=datetime.now(UTC),
@@ -409,6 +414,7 @@ async def test_watched_guests_counts_a_person_once_and_prefers_confirmed(
     user_id, other_id = user.id, other.id
     con = Convention(
         id=uuid.uuid4(),
+        country=UK,
         name="C",
         start_date=TODAY,
         created_at=datetime.now(UTC),
@@ -416,6 +422,7 @@ async def test_watched_guests_counts_a_person_once_and_prefers_confirmed(
     )
     quiet = Convention(
         id=uuid.uuid4(),
+        country=UK,
         name="Q",
         start_date=TODAY,
         created_at=datetime.now(UTC),
@@ -463,3 +470,86 @@ async def test_watched_guests_counts_a_person_once_and_prefers_confirmed(
     ]
     assert quiet.id not in found
     assert await watched_guests(db_session, user_id, []) == {}
+
+
+# --- UK only, unless asked for all -------------------------------------------------
+
+
+async def _matched_at(
+    session: AsyncSession, user_id: uuid.UUID, countries: dict[str, str | None]
+) -> None:
+    """Match one watched person at a convention in each named country."""
+    person = Person(id=uuid.uuid4(), name="Eddie")
+    session.add(person)
+    for name, country in countries.items():
+        con = Convention(
+            id=uuid.uuid4(),
+            country=country,
+            name=name,
+            start_date=TODAY,
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+        )
+        identity = ExternalIdentity(
+            id=uuid.uuid4(), provider="rostercon", external_id=name
+        )
+        session.add_all([con, identity])
+        await session.flush()
+        appearance = Appearance(
+            id=uuid.uuid4(), convention_id=con.id, external_identity_id=identity.id
+        )
+        session.add(appearance)
+        await session.flush()
+        session.add(
+            Match(
+                user_id=user_id,
+                appearance_id=appearance.id,
+                person_id=person.id,
+                match_key=f"person:{person.id}",
+                kind="possible",
+                reason="r",
+            )
+        )
+    await session.commit()
+
+
+async def test_only_uk_appearances_are_listed_unless_all_are_asked_for(
+    db_session: AsyncSession,
+) -> None:
+    auth = AuthService(db_session, session_ttl=timedelta(hours=1))
+    user = await auth.create_user(
+        email="u@example.com", display_name="U", password=PASSWORD
+    )
+    countries = {"Here Con": UK, "Away Con": "united-states", "Somewhere Con": None}
+    await _matched_at(db_session, user.id, countries)
+
+    uk = await relevant_appearances(db_session, user.id, today=TODAY)
+    everywhere = await relevant_appearances(
+        db_session, user.id, today=TODAY, uk_only=False
+    )
+
+    # As on the events page, a convention with no known country is not called UK.
+    assert [r.convention.name for r in uk] == ["Here Con"]
+    assert sorted(r.convention.name for r in everywhere) == sorted(countries)
+
+
+def test_the_page_switches_between_uk_and_all_countries(client: TestClient) -> None:
+    _sign_in(client, "alice@example.com")
+
+    uk = client.get("/appearances").text
+    everywhere = client.get("/appearances", params={"scope": "all"}).text
+
+    assert "My UK appearances" in uk
+    assert 'href="/appearances?scope=all">Show all countries' in uk
+    assert "My appearances everywhere" in everywhere
+    assert 'href="/appearances">Show UK only' in everywhere
+    assert client.get("/appearances", params={"scope": "mars"}).status_code == 422
+
+
+def test_an_empty_uk_list_offers_all_countries(client: TestClient) -> None:
+    _sign_in(client, "bob@example.com")
+
+    page = client.get("/appearances").text
+
+    assert "No appearances found yet in the UK." in page
+    assert 'href="/appearances?scope=all">show all countries' in page

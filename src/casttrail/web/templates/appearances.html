@@ -2,10 +2,17 @@
 {% from "_event_bits.html" import dates, place, status %}
 {% block title %}My appearances · CastTrail{% endblock %}
 {% block content %}
-<h1 class="mb-3">My relevant appearances</h1>
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h1 class="mb-0">{{ "My UK appearances" if uk_only else "My appearances everywhere" }}</h1>
+  {% if uk_only %}
+  <a class="btn btn-outline-secondary btn-sm" href="/appearances?scope=all">Show all countries</a>
+  {% else %}
+  <a class="btn btn-outline-secondary btn-sm" href="/appearances">Show UK only</a>
+  {% endif %}
+</div>
 <p class="text-body-secondary">
-  Where the people you watch are listed as guests. <strong>Confirmed</strong> means a
-  person linked the guest to them. <strong>Possible</strong> means only the name
+  Where the people you watch are listed as guests. <strong>Confirmed</strong> means the
+  guest was checked to be them. <strong>Possible</strong> means only the name
   matched, so it may be someone else with the same name.
 </p>
 {% if rows %}
@@ -36,7 +43,8 @@
   </table>
 </div>
 {% else %}
-<p>No appearances found yet. Watch some <a href="/search">people</a>
-  {% if user.is_admin %}and run a <a href="/admin/refresh">refresh</a>{% else %}and wait for the next refresh{% endif %}.</p>
+<p>No appearances found yet{{ " in the UK" if uk_only }}. Watch some <a href="/search">people</a>
+  {% if user.is_admin %}and run a <a href="/admin/refresh">refresh</a>{% else %}and wait for the next refresh{% endif %}.
+  {% if uk_only %}Or <a href="/appearances?scope=all">show all countries</a>.{% endif %}</p>
 {% endif %}
 {% endblock %}

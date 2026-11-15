@@ -193,7 +193,10 @@ async def test_a_watched_name_gives_a_possible_match_with_its_reason(
         appearance.id,
         person.id,
     )
-    assert (match.kind, match.reason) == ("possible", "Same name.")
+    assert (match.kind, match.reason) == (
+        "possible",
+        "Same name only, so it may be someone else.",
+    )
     assert match.match_key == match_key_for_person(person.id)
     assert match.watch_id is not None
 
@@ -304,7 +307,7 @@ async def test_confirming_makes_the_match_confirmed(
 
     assert (result.added, result.updated) == (0, 1)
     (match,) = await _matches(db_session)
-    assert (match.kind, match.reason) == ("confirmed", "Linked by hand.")
+    assert (match.kind, match.reason) == ("confirmed", "Confirmed in Review guests.")
     assert match.created_at == created
     assert match.updated_at > updated_before
 

@@ -2,9 +2,10 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import TYPE_CHECKING
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, true
 
 from casttrail.catalogue.models import Person
+from casttrail.discovery.browse import UK
 from casttrail.discovery.models import Appearance, Convention
 from casttrail.matching.models import Match
 
@@ -27,7 +28,7 @@ class RelevantAppearance:
 
 
 async def relevant_appearances(
-    session: AsyncSession, user_id: uuid.UUID, *, today: date
+    session: AsyncSession, user_id: uuid.UUID, *, today: date, uk_only: bool = True
 ) -> list[RelevantAppearance]:
     """List where the people a user watches will be, soonest first.
 
@@ -38,6 +39,8 @@ async def relevant_appearances(
         session: The database session.
         user_id: The signed-in user.
         today: The date to count from.
+        uk_only: Only conventions placed in the United Kingdom, as on the events
+            page. Ones with no known country are left out of this view.
 
     Returns:
         The matches, confirmed before possible on the same day.
@@ -54,6 +57,7 @@ async def relevant_appearances(
                 Convention.start_date.is_(None),
                 func.coalesce(Convention.end_date, Convention.start_date) >= cutoff,
             ),
+            Convention.country == UK if uk_only else true(),
         )
         .order_by(
             Convention.start_date.is_(None),
