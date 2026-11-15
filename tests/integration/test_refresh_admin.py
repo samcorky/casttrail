@@ -9,6 +9,7 @@ import httpx2
 import pytest
 import structlog
 import structlog.testing
+import time_machine
 from alembic import command
 from alembic.config import Config
 from apscheduler.triggers.cron import CronTrigger
@@ -20,16 +21,18 @@ from casttrail.auth.service import AuthService
 from casttrail.config import Settings
 from casttrail.db import create_engine, create_session_factory
 from casttrail.discovery.models import JobRun
-from casttrail.discovery.refresh import RefreshReport
+from casttrail.discovery.refresh import JOB, RefreshReport
 from casttrail.discovery.schedule import (
     RefreshAll,
     RefreshJob,
     recent_runs,
     run_in_background,
 )
+from casttrail.discovery.source_refresh import INTERRUPTED
 from casttrail.main import _start_scheduler, create_app
 from casttrail.providers.polite import create_client
 from casttrail.providers.rostercon_client import RosterconFetcher
+from casttrail.startup import REFRESH_WARNING
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -357,6 +360,123 @@ def test_the_app_has_no_timer_by_default(
     _seed(database_url)
     with TestClient(create_app(settings, refresher=refresher)) as client:
         assert _state(client).scheduler is None  # type: ignore[attr-defined]
+
+
+# --- catching up at startup -------------------------------------------------------
+
+# Local time, as the timer counts: a naive datetime is the server's own clock.
+TODAY = datetime(2026, 11, 14)
+
+
+def _local(hours: float) -> datetime:
+    """A moment ``hours`` after midnight today, local time, stored as UTC."""
+    return (TODAY + timedelta(hours=hours)).astimezone(UTC)
+
+
+def _run_at(hours: float, stopped: str | None = None) -> JobRun:
+    summary = None if stopped is None else json.dumps({"stopped": stopped})
+    return JobRun(
+        job=JOB,
+        status="failed" if stopped else "succeeded",
+        started_at=_local(hours),
+        finished_at=_local(hours),
+        summary=summary,
+    )
+
+
+def _start_at(hours: float, settings: Settings, refresher: FakeRefresher) -> object:
+    """Start the app at a local time, the timer on at 04:00, and return its state."""
+    on = settings.model_copy(update={"refresh_enabled": True, "refresh_hour": 4})
+    with (
+        time_machine.travel(TODAY + timedelta(hours=hours), tick=False),
+        TestClient(create_app(on, refresher=refresher)) as client,
+    ):
+        state = _state(client)
+        task = state.refresh_task  # type: ignore[attr-defined]
+        if task is not None:
+            assert refresher.started.wait(5)
+    return state
+
+
+@pytest.mark.parametrize(
+    ("now", "runs"),
+    [
+        pytest.param(10, [], id="never refreshed"),
+        pytest.param(10, [_run_at(-20)], id="last ran before today's 04:00"),
+        pytest.param(3, [_run_at(-21)], id="before 04:00, missed yesterday's"),
+        pytest.param(10, [_run_at(5, INTERRUPTED)], id="today's run was cut off"),
+    ],
+)
+def test_startup_runs_a_refresh_that_was_missed(
+    settings: Settings,
+    database_url: str,
+    refresher: FakeRefresher,
+    now: float,
+    runs: list[JobRun],
+) -> None:
+    _seed(database_url, runs)
+
+    _start_at(now, settings, refresher)
+
+    assert refresher.calls == 1
+
+
+@pytest.mark.parametrize(
+    ("now", "runs"),
+    [
+        pytest.param(10, [_run_at(4)], id="ran at 04:00 today"),
+        pytest.param(3, [_run_at(-19)], id="before 04:00, ran yesterday"),
+        pytest.param(10, [_run_at(6, "The refresh crashed")], id="crashed today"),
+        pytest.param(
+            10,
+            [JobRun(job=JOB, status="running", started_at=_local(6))],
+            id="died mid-run today",
+        ),
+    ],
+)
+def test_startup_leaves_a_refresh_that_already_ran(
+    settings: Settings,
+    database_url: str,
+    refresher: FakeRefresher,
+    now: float,
+    runs: list[JobRun],
+) -> None:
+    _seed(database_url, runs)
+
+    state = _start_at(now, settings, refresher)
+
+    assert state.refresh_task is None  # type: ignore[attr-defined]
+    assert refresher.calls == 0
+
+
+def test_startup_does_not_catch_up_when_the_timer_is_off(
+    settings: Settings, database_url: str, refresher: FakeRefresher
+) -> None:
+    _seed(database_url)
+
+    with TestClient(create_app(settings, refresher=refresher)) as client:
+        assert _state(client).refresh_task is None  # type: ignore[attr-defined]
+
+    assert refresher.calls == 0
+
+
+def test_a_failed_catch_up_check_is_a_warning_not_a_crash(
+    settings: Settings,
+    database_url: str,
+    refresher: FakeRefresher,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _seed(database_url)
+
+    async def broken(session: AsyncSession, hour: int) -> bool:
+        raise RuntimeError("no")
+
+    monkeypatch.setattr("casttrail.main.refresh_is_due", broken)
+
+    state = _start_at(10, settings, refresher)
+
+    assert REFRESH_WARNING in state.startup.warnings  # type: ignore[attr-defined]
+    assert refresher.calls == 0
 
 
 def test_leaving_the_app_stops_a_refresh_still_running(

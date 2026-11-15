@@ -31,6 +31,8 @@ logger = structlog.get_logger(__name__)
 
 # A run still marked running after this long is taken to have died.
 STALE_AFTER = timedelta(hours=2)
+# What a run cut short by the app stopping says, so a startup catch-up can retry it.
+INTERRUPTED = "Interrupted: the app stopped"
 # Events that began a day or two ago may still be running.
 _GRACE = timedelta(days=2)
 
@@ -215,7 +217,7 @@ class SourceRefresh[F: PoliteFetcher](ABC):
         except asyncio.CancelledError:
             # The app is stopping (a restart, or a new image): not a fault in the run.
             await self._session.rollback()
-            report.stopped = "Interrupted: the app stopped"
+            report.stopped = INTERRUPTED
             logger.warning("refresh_interrupted", source=self.provider)
             await self._finish(job_id, report)
             raise
