@@ -38,6 +38,7 @@ dev = [
     "pytest-cov>=7.0",
     "ruff>=0.14",
     "time-machine>=3.6.0",
+    "pytest-timeout>=2.4",
 ]
 
 [build-system]
@@ -228,6 +229,10 @@ ignore_missing_imports = true
 testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+# A test that hangs (a refresh that ignores a cancel, a lock never released) fails
+# after this many seconds instead of stopping the whole run. The slowest real test
+# holds for about 12 s.
+timeout = 60
 # --cov lives in the poe `test` task so an ad-hoc pytest run never overwrites .coverage.
 markers = [
     "integration: exercises a real adapter (database, network) rather than an in-memory fake",
