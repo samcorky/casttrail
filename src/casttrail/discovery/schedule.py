@@ -1,3 +1,4 @@
+import asyncio
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Protocol
 
@@ -65,10 +66,13 @@ class RefreshJob:
 
 
 class RefreshAll:
-    """Refreshes every source in turn, so one button and one timer cover them all.
+    """Refreshes every source side by side, so one button and one timer cover them all.
 
-    The sources are separate sites with separate locks and cooldowns, so one asking us
-    to wait, or failing, never stops the next. Stopping the app stops them all.
+    The sources are separate sites, each with its own fetcher (so its own spacing and
+    cooldown), its own lock and its own database session. Running them together asks
+    neither site any faster; a run just takes as long as the slowest source instead of
+    all of them added up. One asking us to wait, or failing, never stops the others.
+    Stopping the app stops them all.
     """
 
     def __init__(self, *jobs: Refresher) -> None:
@@ -80,27 +84,35 @@ class RefreshAll:
         self.jobs = jobs
 
     async def run(self) -> RefreshReport | None:
-        """Run every source's refresh.
+        """Run every source's refresh at the same time, and wait for them all.
 
         Returns:
-            The first report there was (each source's own report is stored with its
-            run), or ``None`` if every source was already being refreshed.
+            The first report there was, in the order the sources were given (each
+            source's own report is stored with its run), or ``None`` if every source
+            was already being refreshed.
 
         Raises:
-            Exception: The first failure, after the other sources have had their turn.
+            Exception: The first failure, in that order, once every source is done.
+            asyncio.CancelledError: The app is stopping; every source is stopped.
         """
+        # A failure is handed back rather than raised, so it does not cancel the
+        # others. Cancelling this run (the app stopping) still cancels every source.
+        outcomes = await asyncio.gather(
+            *(job.run() for job in self.jobs), return_exceptions=True
+        )
         first: RefreshReport | None = None
         failure: Exception | None = None
-        for job in self.jobs:
-            try:
-                report = await job.run()
-            except Exception as error:
+        for job, outcome in zip(self.jobs, outcomes, strict=True):
+            if isinstance(outcome, Exception):
                 # The refresh has already logged its own traceback.
                 name = getattr(job, "job", type(job).__name__)
                 logger.error("refresh_source_failed", job=name)
-                failure = failure or error
-                continue
-            first = first or report
+                failure = failure or outcome
+            elif isinstance(outcome, BaseException):
+                # Not an error: a source was cancelled (the app is stopping) or similar.
+                raise outcome
+            else:
+                first = first or outcome
         if failure is not None:
             raise failure
         return first

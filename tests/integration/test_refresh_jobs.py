@@ -1,3 +1,4 @@
+import asyncio
 import json
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
@@ -85,7 +86,7 @@ async def test_a_refresh_job_runs_the_rostercon_refresh_by_default(
 # --- every source -------------------------------------------------------------------
 
 
-async def test_every_source_is_refreshed_in_turn() -> None:
+async def test_every_source_is_refreshed() -> None:
     calls: list[str] = []
     first = RefreshReport(people_watched=1)
     both = RefreshAll(
@@ -142,9 +143,50 @@ async def test_a_crash_in_one_source_does_not_stop_the_next_and_is_raised_after(
     assert logs[0]["job"] == "Scripted"
 
 
-async def test_stopping_the_app_stops_the_rest_straight_away() -> None:
-    import asyncio
+class Meeting:
+    """A refresh that only finishes once every other one has started too."""
 
+    def __init__(self, name: str, started: list[str], everyone: int) -> None:
+        self.name = name
+        self.started = started
+        self.everyone = everyone
+        self.stopped = False
+
+    async def run(self) -> RefreshReport | None:
+        self.started.append(self.name)
+        try:
+            while len(self.started) < self.everyone:
+                await asyncio.sleep(0.01)
+            await asyncio.sleep(3600)
+        except asyncio.CancelledError:
+            self.stopped = True
+            raise
+        return RefreshReport()
+
+
+async def test_the_sources_are_refreshed_at_the_same_time() -> None:
+    started: list[str] = []
+    meeting = [Meeting(name, started, 2) for name in ("rostercon", "comiconomicon")]
+    task = asyncio.create_task(RefreshAll(*meeting).run())
+    try:
+        # Taking turns, the second would never start while the first is running.
+        async with asyncio.timeout(5):
+            while len(started) < 2:
+                await asyncio.sleep(0.01)
+    finally:
+        task.cancel()
+        # A run that ignored the cancel fails here rather than hanging the tests.
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, 5)
+
+    assert started == ["rostercon", "comiconomicon"]
+    # Stopping the app stopped every source, not only the first.
+    assert [m.stopped for m in meeting] == [True, True]
+
+
+async def test_a_source_cancelled_on_its_own_is_raised_after_the_others_finish() -> (
+    None
+):
     calls: list[str] = []
     both = RefreshAll(
         Scripted("rostercon", asyncio.CancelledError(), calls),
@@ -154,7 +196,22 @@ async def test_stopping_the_app_stops_the_rest_straight_away() -> None:
     with pytest.raises(asyncio.CancelledError):
         await both.run()
 
-    assert calls == ["rostercon"]
+    assert calls == ["rostercon", "comiconomicon"]
+
+
+class Halt(BaseException):
+    """Something that is not an error, such as a generator being closed."""
+
+
+async def test_anything_else_a_source_raises_is_raised() -> None:
+    calls: list[str] = []
+    both = RefreshAll(
+        Scripted("rostercon", RefreshReport(), calls),
+        Scripted("comiconomicon", Halt(), calls),
+    )
+
+    with pytest.raises(Halt):
+        await both.run()
 
 
 async def test_the_first_crash_is_the_one_raised() -> None:
@@ -209,6 +266,7 @@ async def test_recent_runs_include_every_source_newest_first(
 async def _both_sources(
     db_session: AsyncSession,
     rostercon: httpx2.MockTransport,
+    comiconomicon: httpx2.MockTransport | None = None,
 ) -> RefreshAll:
     """The real combined refresh; the watched person is unknown on Comiconomicon."""
     auth = AuthService(db_session, session_ttl=timedelta(hours=1))
@@ -224,7 +282,7 @@ async def _both_sources(
     def empty_search(request: httpx2.Request) -> httpx2.Response:
         return httpx2.Response(200, text="[]")
 
-    comiconomicon = create_client(transport=httpx2.MockTransport(empty_search))
+    search = comiconomicon or httpx2.MockTransport(empty_search)
     return RefreshAll(
         RefreshJob(
             factory,
@@ -232,7 +290,7 @@ async def _both_sources(
         ),
         RefreshJob(
             factory,
-            ComiconomiconFetcher(comiconomicon, min_interval=0),
+            ComiconomiconFetcher(create_client(transport=search), min_interval=0),
             ComiconomiconRefresh,
         ),
     )
@@ -306,3 +364,37 @@ async def test_a_running_rostercon_refresh_does_not_block_comiconomicon(
     runs = await _runs(db_session)
     assert runs[ROSTERCON_JOB][0] == "running"
     assert runs[COMICONOMICON_JOB][0] == "succeeded"
+
+
+async def test_both_real_refreshes_overlap_and_both_store_what_they_found(
+    db_session: AsyncSession,
+) -> None:
+    rostercon_asked = asyncio.Event()
+    comiconomicon_asked = asyncio.Event()
+
+    async def rostercon(request: httpx2.Request) -> httpx2.Response:
+        rostercon_asked.set()
+        # Taking turns, Comiconomicon could not be asked until Rostercon was done.
+        await asyncio.wait_for(comiconomicon_asked.wait(), 5)
+        return httpx2.Response(404)
+
+    async def empty_search(request: httpx2.Request) -> httpx2.Response:
+        comiconomicon_asked.set()
+        await asyncio.wait_for(rostercon_asked.wait(), 5)
+        return httpx2.Response(200, text="[]")
+
+    both = await _both_sources(
+        db_session,
+        httpx2.MockTransport(rostercon),
+        httpx2.MockTransport(empty_search),
+    )
+
+    await both.run()
+
+    runs = await _runs(db_session)
+    assert {job: status for job, (status, _) in runs.items()} == {
+        ROSTERCON_JOB: "succeeded",
+        COMICONOMICON_JOB: "succeeded",
+    }
+    assert runs[ROSTERCON_JOB][1]["people_unmatched"] == 1
+    assert runs[COMICONOMICON_JOB][1]["people_unmatched"] == 1

@@ -488,3 +488,10 @@ The app is meant to run in Docker. Files: `Dockerfile`, `compose.yaml`, `.docker
 - **The rule:** at startup, with the refresh switched on, the refresh is due if no run of any source has begun since the refresh hour last passed (today's if it is past, otherwise yesterday's), in the server's local time like the timer. It then starts in the background, in the same slot as the Refresh button, so startup does not wait and the button says it is running.
 - **What counts as a run:** a run cut short by the app stopping (`Interrupted: the app stopped`) does not, so a restart in the middle of the night's run picks it up again (and A13 carries on where it stopped). Anything else does, including a crash or a run that died without finishing: an app that keeps crashing at startup must not keep asking Rostercon.
 - **The sources together:** one check covers both, because they run in turn as one refresh. If the check itself fails, the app carries on and the Source health page shows a warning.
+
+## The sources refresh side by side (2026-11-14)
+
+- **Why:** one Refresh (button or timer) ran Rostercon and then Comiconomicon, so a full run took both added together (up to about 90 minutes plus up to an hour). Nearly all of that is waiting for each site's spacing, which costs nothing to do at the same time.
+- **What changed:** `RefreshAll` starts every source at once (`asyncio.gather` with `return_exceptions=True`) and waits for them all. Each source still has its own fetcher, so neither site is asked any faster, and its own lock and database session.
+- **Unchanged:** a refusal or crash in one source never stops the others; the first failure (in source order) is raised once all are done; the first report in source order is returned; stopping the app cancels every source, and each records "Interrupted".
+- **The database:** both write, but only in short transactions after each page (no transaction is held across a request), so they rarely meet on SQLite's single write lock, and the 5 s busy timeout covers it when they do.
