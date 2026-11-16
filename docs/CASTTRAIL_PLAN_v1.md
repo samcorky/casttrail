@@ -314,7 +314,7 @@ No ntfy or email yet (owner's decision, 2026-11-16): the outbox, retries and sen
 - [x] 6.1 `notification_events` and `user_notifications` (unique `user_id, event_id`, `rev`, `read_at`), event keys, and `watches.alerts_from` (migration 0017) 🗄️ 🧪
 - [x] 6.2 Create alerts after each rematch from confirmed matches only: baseline sync suppression, future-only events, a material change bumps `rev` and marks the alert unread again 🧪 (as built: in the rematch's own transaction, `notifications/service.py`; see `docs/decisions.md`)
 - [ ] 6.3 Top-billed expansion for watched films and series 🧪 Also watched films and series through Comiconomicon's film pages (`/videomedia/<id>`, found by exact title and year), moved here from 5.5d
-- [ ] 6.4 Alerts page (newest first, mark read, mark all read) and an unread count in the nav, counted per request; each alert links to the event 👁️ DEMO
+- [x] 6.4 Alerts page (newest first, mark read, mark all read) and an unread count in the nav, counted per request; each alert links to the event 👁️ DEMO (as built: `/alerts`, built before 6.3)
 - [ ] ⛔ GATE: re-ingest makes no new alert, baseline sync makes none, two users isolated, 95% coverage on notifications
 
 ### WP-7 Collections

@@ -36,6 +36,8 @@
             <ul class="navbar-nav me-auto">
               <li class="nav-item"><a class="nav-link{% if path == "/watchlist" %} active{% endif %}" href="/watchlist"{% if path == "/watchlist" %} aria-current="page"{% endif %}>Watchlist</a></li>
               <li class="nav-item"><a class="nav-link{% if path == "/appearances" %} active{% endif %}" href="/appearances"{% if path == "/appearances" %} aria-current="page"{% endif %}>My appearances</a></li>
+              {% set unread = request.state.unread_alerts | default(0) %}
+              <li class="nav-item"><a class="nav-link{% if path == "/alerts" %} active{% endif %}" href="/alerts"{% if path == "/alerts" %} aria-current="page"{% endif %}>Alerts{% if unread %} <span class="badge rounded-pill text-bg-danger">{{ unread }}<span class="visually-hidden"> unread</span></span>{% endif %}</a></li>
               <li class="nav-item"><a class="nav-link{% if path.startswith("/events") %} active{% endif %}" href="/events"{% if path.startswith("/events") %} aria-current="page"{% endif %}>Events</a></li>
               <li class="nav-item"><a class="nav-link{% if path == "/search" %} active{% endif %}" href="/search"{% if path == "/search" %} aria-current="page"{% endif %}>Search</a></li>
               {% if user.is_admin %}

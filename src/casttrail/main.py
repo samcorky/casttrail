@@ -40,6 +40,7 @@ from casttrail.startup import (
 from casttrail.web import static_files
 from casttrail.web.account_routes import router as account_router
 from casttrail.web.admin_routes import router as admin_router
+from casttrail.web.alert_routes import router as alert_router
 from casttrail.web.auth_routes import router as auth_router
 from casttrail.web.csrf import verify_same_origin
 from casttrail.web.dependencies import LoginRequiredError
@@ -355,6 +356,7 @@ def create_app(
         watch_router,
         event_router,
         match_router,
+        alert_router,
         merge_router,
         review_router,
         link_router,
