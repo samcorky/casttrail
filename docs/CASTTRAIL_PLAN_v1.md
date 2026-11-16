@@ -5,7 +5,7 @@
 
 ## 1. Goal
 
-A self-hosted app for 2-3 trusted users. It watches actors, films and series, finds UK convention guest appearances, and sends one ntfy alert per new relevant appearance. That is the whole core product.
+A self-hosted app for 2-3 trusted users. It watches actors, films and series, finds UK convention guest appearances, and shows one alert in the app per new relevant appearance. That is the whole core product. Alerts sent outside the app (ntfy, email) come later (section 9).
 
 **Optional collections:** users can also track simple per-user collections (e.g. "autographs I've collected"). **Bond is an add-on** on top of that: a poster challenge of 25 or 27 films with one unique in-person signer per poster, per collection. The core app must work fully with collections and Bond absent.
 
@@ -79,9 +79,8 @@ class ConventionProvider(Protocol):
 - Only future-dated events alert.
 - Production and series watches expand only to top-billed cast (configurable, default top 10).
 - Event key is `appear:{canonical_appearance_id}:{person_id}`. A material change adds a new `rev` column value, not a hash. Per-user uniqueness is `(user_id, event_key)`.
-- Delivery has a retry schedule of 1m, 5m, 30m, 2h, then failed. Delivery is at-least-once.
-- ntfy: the server URL is set by the admin, and each user gets a random generated topic by default. Message text is sanitised.
-- Channels: ntfy is the first. Email (SMTP) and PWA Web Push are likely to follow as further channels (see section 9), so keep the outbox channel-agnostic. A delivery records its `channel`, a user's destinations are per channel, and nothing about the event key, `rev`, baseline suppression or the retry schedule is ntfy-specific. Settle the destination table's shape at 6.1 (one table holding a channel and its settings, not `ntfy_destinations`).
+- **In the app first.** An alert is a `user_notifications` row, shown on an Alerts page with an unread count in the nav. It has no delivery step, so nothing can fail to send and there is no retry or outbox yet.
+- **Sent channels later** (ntfy, email by SMTP, PWA Web Push; see section 9). Each adds a `notification_deliveries` row per user notification it sends, with its `channel`, a retry schedule of 1m, 5m, 30m, 2h then failed, and at-least-once delivery, plus one destinations table holding a channel and its settings per user. So nothing about the event key, `rev` or baseline suppression may assume a channel, and a channel added later never creates alerts of its own: it only sends ones the app already has. Message text is built once and sanitised.
 
 **Bond signer uniqueness**
 - `signatures(id, collection_id, item_id, person_id, in_person, ...)`.
@@ -108,7 +107,7 @@ Alembic is set up at WP-1, and each slice adds only its own tables.
 | 3 | `conventions`, `convention_sources` (convention ↔ provider+source_key, unique), `source_observations` (provider, source_key, content_hash, complete, fetched_at; no stored payload; **prune to the last 3 per key**), `appearances` (nullable `person_id`, plus `external_identity_id`), `appearance_sources`, `job_runs` |
 | 4 | `identity_decisions` (migration 0010), `matches` (0011; non-null `match_key`, unique with `user_id`) |
 | 5 | `convention_merges` (suggested and rejected pairs; 0012), and each source's own name, dates and venue on `convention_sources` (0013) |
-| 6 | `notification_events`, `user_notifications`, `notification_deliveries`, `ntfy_destinations` |
+| 6 | `notification_events`, `user_notifications` (with `read_at`). `notification_deliveries` and `notification_destinations` wait for the first sent channel. |
 | 7 | `collections`, `collection_items`, `signatures`, `eligibility_overrides` |
 
 Built so far: migrations 0001 to 0013 (0009 `job_runs`, 0010 `identity_decisions`, 0011 `matches`, 0012 `convention_merges`, 0013 source views).
@@ -125,7 +124,7 @@ Each WP ends with a runnable app, a UI-visible outcome, a migration test (fresh 
 | **3 Event browser** | Provider 1, discovery service, scheduled and manual refresh, source health, UK events and guests with provenance. | Refreshing twice makes no duplicates. A parse failure keeps old data and marks the source degraded. |
 | **4 Relevant + identity** | Matching, "my relevant appearances" page, *Possible* tier, admin review with bulk confirm, link, unlink and reject. | A correction survives three re-syncs. Unresolved guests never alert. |
 | **5 Second source** | Provider 2, event dedupe (strict: same country, overlapping dates, normalised name/venue match). Uncertain pairs stay separate, and the admin can merge them. Conflicts shown. | One real event from both fixtures shows once with two sources. |
-| **6 ntfy** | Destination setup and test, outbox, baseline suppression, retries, delivery status page. | A new match alerts once. Re-ingest doesn't resend. Failed sends retry. |
+| **6 Alerts in the app** | Alerts created from confirmed matches, baseline suppression, future-only, top-billed expansion, an Alerts page with read and unread and a count in the nav. No ntfy or email yet. | A new match alerts once. Re-ingest makes no new alert. One user never sees another's. |
 | **7 Collections + Bond add-on** | Simple collections and signatures in core; Bond is a separate add-on module (`casttrail/bond/`, optional, switched on by a setting). Bond seed (25 films plus the 2 optional), partial unique signer index, eligibility overrides, and guests who can sign unsigned posters. | Two Bond collectors stay independent. The same signer can't fill two posters in one collection. |
 | **8 Deploy** | Docker Compose, migrate-then-start and backups (both built early, see 8.1 and 8.2), restore test, two-user smoke test, README. | Fresh install works, and a restore from backup works. |
 
@@ -179,7 +178,7 @@ Each WP ends with a runnable app, a UI-visible outcome, a migration test (fresh 
 | 3 | 4-6 |
 | 4 | 4-5 |
 | 5 | 3-5 |
-| 6 | 2-3 |
+| 6 | 2 |
 | 7 | 3-4 |
 | 8 | 2 |
 | **Total** | **26-34** |
@@ -192,7 +191,8 @@ Entry-point plugins, JSON API, digests, Bond ranking and bipartite assignment, c
 
 **Installable PWA (optional).** Web app manifest, the 1.6e icons, a service worker that caches only static assets, and an install prompt. Notes: it needs HTTPS, so it follows WP-8; the service worker must never cache pages or responses behind a login, so it stays a shell and offers no offline data; and a tap on an ntfy alert should open the installed app (the `SameSite=Lax` decision already allows that link to arrive signed in). Do 1.6e first so the icon set is ready. Web Push (below) builds on it.
 
-**More notification channels (planned after WP-6).** Each is its own slice behind the channel-agnostic outbox.
+**Sent alerts (planned after WP-6).** WP-6 shows alerts only in the app. The first sent channel adds the outbox: `notification_deliveries`, `notification_destinations`, a worker with the retry schedule and crash recovery, and a delivery status page. Each further channel is then only an adapter.
+- *ntfy:* the server URL is set by the admin, each user gets a random generated topic by default, and a test button.
 - *Email (SMTP):* an admin-set server, a per-user address, a plain-text body built from the same sanitised message, and a test button. It is only a new adapter.
 - *Web Push to an installed PWA:* needs the PWA first (manifest, service worker, HTTPS), VAPID keys held as admin-set secrets, one stored push subscription per browser, and removal of a subscription when the push service answers 404 or 410. iOS delivers push only to a PWA added to the home screen.
 
@@ -213,7 +213,7 @@ Answered:
 3. **Python 3.14?** Works, including in the Docker image.
 
 Still open:
-4. (For WP-6) Which channels besides ntfy, and in what order: SMTP, Web Push?
+4. (After WP-6) Which sent channel comes first, and in what order: ntfy, SMTP, Web Push? WP-6 itself only shows alerts in the app (owner's decision, 2026-11-16).
 5. (For 6.4, moved from 5.5d) How a watched film or series finds its Comiconomicon film page beyond an exact title and year match, and whether its `/universe` pages are worth using for franchise watches.
 6. Whether the daily refresh should be on by default (it is off, so nothing contacts a source until the owner chooses).
 7. (For A16) Which outside services the map may use. Recommended: Nominatim for geocoding (server side, a handful of requests per new venue, cached for good) and OpenStreetMap's own tiles in the browser (fine at 2-3 users with attribution, but each viewer's browser asks `tile.openstreetmap.org` directly). Alternatives: an offline UK place list (OS Open Names or ONS, open licences) instead of Nominatim, which places towns but not venues; and a self-hosted or paid tile server instead of OSM's, if tile requests leaving the browser are unwanted.
@@ -309,13 +309,13 @@ Still open:
   - [ ] A16b **Fix a point by hand** 🧪 👁️ DEMO: on the event page an admin can set a convention's point (paste `lat, lon`, or pick it on a small map) or clear a wrong one, as Source pages does for people (A10, A14). Source health counts conventions with no point.
   - [ ] A16c **The map page** (`/map`) 🧪 👁️ DEMO: Leaflet, vendored in `web/static` like Bootstrap (no CDN), on OpenStreetMap tiles with their attribution. One marker per upcoming convention, UK by default with the events page's all-countries switch. A marker shows whether you watch someone there (confirmed, possible, or nobody), and its popup has the name, dates, the people you watch and a link to the event page. An "only mine" filter shows just the ones with someone you watch. Works on a phone (full-width map, the list of unplaced conventions below). The tiles are the only thing the browser loads from outside: if a Content-Security-Policy is added later it must allow the tile host.
 
-### WP-6 ntfy alerts
-- [ ] 6.1 Notification tables and event keys 🗄️ 🧪
-- [ ] 6.2 ntfy adapter, admin-set server, random user topic, test button
-- [ ] 6.3 Outbox worker with retries and crash recovery 🧪
-- [ ] 6.4 Baseline sync suppression, future-only events, top-billed expansion 🧪 Also watched films and series through Comiconomicon's film pages (`/videomedia/<id>`, found by exact title and year), moved here from 5.5d
-- [ ] 6.5 Delivery status page 👁️ DEMO
-- [ ] ⛔ GATE: re-ingest sends nothing, a failed send retries, 95% coverage on notifications
+### WP-6 Alerts in the app
+No ntfy or email yet (owner's decision, 2026-11-16): the outbox, retries and sent channels move to section 9.
+- [ ] 6.1 `notification_events` and `user_notifications` (unique `user_id, event_key`, `rev`, `read_at`), event keys 🗄️ 🧪
+- [ ] 6.2 Create alerts after each rematch from confirmed matches only: baseline sync suppression, future-only events, a material change bumps `rev` and marks the alert unread again 🧪
+- [ ] 6.3 Top-billed expansion for watched films and series 🧪 Also watched films and series through Comiconomicon's film pages (`/videomedia/<id>`, found by exact title and year), moved here from 5.5d
+- [ ] 6.4 Alerts page (newest first, mark read, mark all read) and an unread count in the nav, counted per request; each alert links to the event 👁️ DEMO
+- [ ] ⛔ GATE: re-ingest makes no new alert, baseline sync makes none, two users isolated, 95% coverage on notifications
 
 ### WP-7 Collections
 - [ ] 7.1 Collection and item tables, ownership checks 🗄️ 🧪
@@ -349,7 +349,7 @@ CastTrail runs in Docker on the owner's PC, reached over Tailscale at `https://s
 - **Ops:** `.env`, automatic update with a safety copy, never-crash startup, backups, Docker, poe docker tasks, icon generator.
 
 ### Next
-1. **5.5b to 5.5d** (fetch Comiconomicon: a polite fetcher and cached lookup, a refresh for watched people, then films and series), then **WP-6 ntfy** together with franchise and Bond watches (2.5), then WP-7 and the rest of WP-8.
+1. **5.5b to 5.5d** (fetch Comiconomicon: a polite fetcher and cached lookup, a refresh for watched people, then films and series), then **WP-6 alerts in the app** together with franchise and Bond watches (2.5), then WP-7 and the rest of WP-8.
 2. Owner actions: merge #59, #57, #58 (bottom up); put a fresh TMDB key in `.env` (the one pasted into chat should be rotated); set Docker Desktop to start with Windows; copy `./backups` somewhere off the machine now and then.
 
 ### Decisions made since the plan was written

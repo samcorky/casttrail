@@ -1,6 +1,6 @@
 # AGENTS.md
 
-CastTrail is a small self-hosted app for 2-3 trusted users. It tracks people, films and series, finds UK convention guest appearances, and sends ntfy alerts. Simple per-user collections exist too, and the Bond poster challenge is an optional add-on.
+CastTrail is a small self-hosted app for 2-3 trusted users. It tracks people, films and series, finds UK convention guest appearances, and shows alerts in the app (ntfy or email later). Simple per-user collections exist too, and the Bond poster challenge is an optional add-on.
 
 The plan is `docs/CASTTRAIL_PLAN_v1.md`. Read it before changing code. `docs/CASTTRAIL_HLD_v0.12.md` and `docs/CASTTRAIL_LLD_v0.8.md` are superseded background only.
 

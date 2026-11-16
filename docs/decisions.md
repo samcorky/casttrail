@@ -500,3 +500,9 @@ The app is meant to run in Docker. Files: `Dockerfile`, `compose.yaml`, `.docker
 
 - **UK only unless asked:** My appearances now has the events page's switch (`scope=all`), with the same rule: UK by default, and a convention with no known country shows only under all countries. It had listed every country, unlike the events page.
 - **Reasons:** a match's "why" is read by the person whose watch it is, not the admin who reviewed it. "Linked by hand." is now "Confirmed in Review guests.", "Same name." is "Same name only, so it may be someone else.", and "Same rostercon id." is "Both have the same rostercon id.". Reasons are stored on each match, and the next rematch (every refresh) rewrites old ones.
+
+## WP-6 shows alerts in the app first; ntfy and email later (2026-11-16)
+
+- **Owner's decision:** WP-6 is no longer "ntfy alerts". A new relevant appearance becomes an alert on an Alerts page, with an unread count in the nav. Nothing is sent outside the app yet.
+- **What that drops from WP-6:** the outbox worker, retries, `notification_deliveries`, the destinations table, the ntfy adapter and the delivery status page. They arrive with the first sent channel (ntfy, SMTP or Web Push; which comes first is still open).
+- **What stays:** the event key, `rev`, baseline suppression, future-only, confirmed-only and top-billed expansion, in `notification_events` and `user_notifications`. A sent channel will only deliver alerts the app has already made, so adding one changes nothing upstream.
