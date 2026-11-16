@@ -11,6 +11,7 @@ from casttrail.discovery.models import Appearance, AppearanceSource
 from casttrail.identity.models import ExternalIdentity, IdentityDecision
 from casttrail.matching.models import Match
 from casttrail.matching.resolver import Candidate, Guest, resolve
+from casttrail.notifications.service import raise_alerts
 from casttrail.watching.models import Watch
 
 if TYPE_CHECKING:
@@ -58,8 +59,9 @@ class MatchService:
     """Works out which guests are people users watch.
 
     ``rematch`` recomputes everything from the current guests, watches and decisions and
-    brings the stored matches into line, so running it again changes nothing. It never
-    writes decisions or links; it only reads them.
+    brings the stored matches into line, then the alerts they lead to, in the same
+    transaction, so running it again changes nothing. It never writes decisions or
+    links; it only reads them.
     """
 
     def __init__(
@@ -136,6 +138,8 @@ class MatchService:
         stale = [m for key, m in existing.items() if key not in wanted]
         for match in stale:
             await self._session.delete(match)
+        await self._session.flush()
+        await raise_alerts(self._session)
         return RematchResult(added=added, updated=updated, removed=len(stale))
 
     async def _wanted(self) -> dict[_Key, _Wanted]:
