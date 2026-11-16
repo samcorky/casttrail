@@ -75,10 +75,10 @@ class ConventionProvider(Protocol):
 7. Rejections are stored per (external identity, candidate person) and are never retried.
 
 **Alerts**
-- Initial import of a provider (**baseline sync**) records everything and sends nothing.
+- **Baseline:** an appearance alerts only if it was first seen after the user started watching (`watches.alerts_from`; watches older than alerts start at migration 0017). Following someone, or a source's first import, never alerts about what was already known.
 - Only future-dated events alert.
 - Production and series watches expand only to top-billed cast (configurable, default top 10).
-- Event key is `appear:{canonical_appearance_id}:{person_id}`. A material change adds a new `rev` column value, not a hash. Per-user uniqueness is `(user_id, event_key)`.
+- Event key is `appear:{convention_id}:{person_id}`, so a person listed by two sources at one merged event is one alert. A material change (dates, or the convention or guest cancelled) adds a new `rev` column value, not a hash, and raises the alert again as unread. Per-user uniqueness is `(user_id, event_id)`. A cancelled event never makes a new alert, and alerts are never removed by a rematch.
 - **In the app first.** An alert is a `user_notifications` row, shown on an Alerts page with an unread count in the nav. It has no delivery step, so nothing can fail to send and there is no retry or outbox yet.
 - **Sent channels later** (ntfy, email by SMTP, PWA Web Push; see section 9). Each adds a `notification_deliveries` row per user notification it sends, with its `channel`, a retry schedule of 1m, 5m, 30m, 2h then failed, and at-least-once delivery, plus one destinations table holding a channel and its settings per user. So nothing about the event key, `rev` or baseline suppression may assume a channel, and a channel added later never creates alerts of its own: it only sends ones the app already has. Message text is built once and sanitised.
 
@@ -312,7 +312,7 @@ Still open:
 ### WP-6 Alerts in the app
 No ntfy or email yet (owner's decision, 2026-11-16): the outbox, retries and sent channels move to section 9.
 - [x] 6.1 `notification_events` and `user_notifications` (unique `user_id, event_id`, `rev`, `read_at`), event keys, and `watches.alerts_from` (migration 0017) 🗄️ 🧪
-- [ ] 6.2 Create alerts after each rematch from confirmed matches only: baseline sync suppression, future-only events, a material change bumps `rev` and marks the alert unread again 🧪
+- [x] 6.2 Create alerts after each rematch from confirmed matches only: baseline sync suppression, future-only events, a material change bumps `rev` and marks the alert unread again 🧪 (as built: in the rematch's own transaction, `notifications/service.py`; see `docs/decisions.md`)
 - [ ] 6.3 Top-billed expansion for watched films and series 🧪 Also watched films and series through Comiconomicon's film pages (`/videomedia/<id>`, found by exact title and year), moved here from 5.5d
 - [ ] 6.4 Alerts page (newest first, mark read, mark all read) and an unread count in the nav, counted per request; each alert links to the event 👁️ DEMO
 - [ ] ⛔ GATE: re-ingest makes no new alert, baseline sync makes none, two users isolated, 95% coverage on notifications
