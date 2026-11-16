@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% from "_event_bits.html" import dates, place %}
+{% block title %}Alerts · CastTrail{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h1 class="mb-0">Alerts</h1>
+  {% if any_unread %}
+  <form method="post" action="/alerts/read">
+    <button type="submit" class="btn btn-outline-secondary btn-sm">Mark all read</button>
+  </form>
+  {% endif %}
+</div>
+<p class="text-body-secondary">
+  A new alert appears when someone you watch is confirmed as a guest at an upcoming
+  event found after you started watching them. An alert comes back as unread if the
+  event's dates change or it is cancelled.
+</p>
+{% if rows %}
+<div class="table-responsive">
+  <table class="table align-middle">
+    <thead>
+      <tr><th>Person</th><th>Event</th><th class="d-none d-md-table-cell">When</th><th class="d-none d-md-table-cell">Where</th><th>Alert</th></tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr{% if row.unread %} class="fw-semibold"{% endif %}>
+        <td>{{ row.person_name }}</td>
+        <td><a href="/events/{{ row.convention.id }}">{{ row.convention.name }}</a>
+          <div class="d-md-none small text-body-secondary fw-normal">{{ dates(row.convention) }} · {{ place(row.convention) }}</div>
+        </td>
+        <td class="d-none d-md-table-cell">{{ dates(row.convention) }}</td>
+        <td class="d-none d-md-table-cell">{{ place(row.convention) }}</td>
+        <td>
+          {% if row.cancelled %}<span class="badge text-bg-danger">Cancelled</span>
+          {% elif row.changed %}<span class="badge text-bg-warning">Dates changed</span>
+          {% else %}<span class="badge text-bg-info">New</span>{% endif %}
+          <div class="small text-body-secondary fw-normal">{{ row.raised_at.strftime("%d %b %Y") }}</div>
+          {% if row.unread %}
+          <form method="post" action="/alerts/{{ row.id }}/read" class="mt-1">
+            <button type="submit" class="btn btn-link btn-sm p-0">Mark read</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p>No alerts yet. They appear here when a refresh finds someone you
+  <a href="/watchlist">watch</a> at an upcoming event. Everything already known is on
+  <a href="/appearances">My appearances</a>.</p>
+{% endif %}
+{% endblock %}

@@ -13,6 +13,7 @@ from casttrail.config import Settings
 from casttrail.discovery.merging import MergeService
 from casttrail.identity.decisions import DecisionService
 from casttrail.matching.service import MatchService
+from casttrail.notifications.queries import unread_count
 from casttrail.providers.base import MetadataProvider
 from casttrail.watching.service import WatchService
 from casttrail.web.cookies import read_session_token
@@ -83,7 +84,7 @@ AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 
 
 async def get_current_user(
-    request: Request, settings: SettingsDep, auth: AuthServiceDep
+    request: Request, settings: SettingsDep, auth: AuthServiceDep, session: SessionDep
 ) -> User | None:
     """Return the signed-in user, if any.
 
@@ -91,6 +92,7 @@ async def get_current_user(
         request: The current request.
         settings: The application settings.
         auth: The auth service.
+        session: The request's database session (the same one ``auth`` holds).
 
     Returns:
         The user, or ``None`` when there is no valid session.
@@ -103,6 +105,11 @@ async def get_current_user(
         # So the request log and every line logged for this request say who it was for.
         request.state.user_id = str(user.id)
         structlog.contextvars.bind_contextvars(user_id=str(user.id))
+        # For the count beside Alerts in the nav, on every signed-in page. Every
+        # transaction holds SQLite's write lock, so end this one at once: the page may
+        # go on to wait for TMDB.
+        request.state.unread_alerts = await unread_count(session, user.id)
+        await session.commit()
     return user
 
 
