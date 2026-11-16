@@ -34,7 +34,7 @@ def _revisions(database_url: str) -> list[str]:
 def test_upgrade_on_an_empty_database_reaches_head(database_url: str) -> None:
     command.upgrade(_config(database_url), "head")
 
-    assert _revisions(database_url) == ["0016"]
+    assert _revisions(database_url) == ["0017"]
 
 
 def test_upgrade_is_repeatable(database_url: str) -> None:
@@ -43,7 +43,7 @@ def test_upgrade_is_repeatable(database_url: str) -> None:
     command.upgrade(config, "head")
     command.upgrade(config, "head")
 
-    assert _revisions(database_url) == ["0016"]
+    assert _revisions(database_url) == ["0017"]
 
 
 def test_status_page_shows_the_applied_revision(
@@ -52,7 +52,7 @@ def test_status_page_shows_the_applied_revision(
     command.upgrade(_config(database_url), "head")
 
     with TestClient(create_app(Settings(database_url=database_url))) as client:
-        assert "Database revision 0016" in client.get("/status").text
+        assert "Database revision 0017" in client.get("/status").text
 
 
 def _connect(database_url: str) -> sqlite3.Connection:
@@ -94,7 +94,7 @@ def test_upgrading_from_the_previous_revision_keeps_existing_data(
             ("a@example.com",)
         ]
         assert _table_names(connection) >= NEW_TABLES
-    assert _revisions(database_url) == ["0016"]
+    assert _revisions(database_url) == ["0017"]
 
 
 def test_the_migrated_schema_enforces_its_constraints(database_url: str) -> None:
@@ -181,7 +181,7 @@ def test_upgrading_from_watches_keeps_existing_data(database_url: str) -> None:
             "SELECT external_id FROM external_identities"
         ).fetchall() == [("alice-en",)]
         assert _table_names(connection) >= DISCOVERY_TABLES
-    assert _revisions(database_url) == ["0016"]
+    assert _revisions(database_url) == ["0017"]
 
 
 def test_the_migrated_discovery_schema_enforces_its_constraints(
@@ -283,7 +283,7 @@ def test_upgrading_from_discovery_tables_keeps_identities_and_adds_a_name(
             """
         ).fetchall()
     assert rows == [("1", "p1", None), ("bob-en", None, None)]
-    assert _revisions(database_url) == ["0016"]
+    assert _revisions(database_url) == ["0017"]
 
 
 def test_the_migrated_name_column_takes_a_name_and_may_stay_empty(
@@ -372,7 +372,7 @@ def test_upgrading_from_the_previous_revision_keeps_people_and_adds_lookups(
         assert connection.execute("SELECT COUNT(*) FROM source_lookups").fetchone() == (
             0,
         )
-    assert _revisions(database_url) == ["0016"]
+    assert _revisions(database_url) == ["0017"]
 
 
 def test_the_migrated_source_lookups_table_enforces_its_rules(
@@ -458,7 +458,7 @@ def test_upgrading_from_source_lookups_keeps_rows_as_not_manual(
         assert connection.execute(
             "SELECT source_key, manual FROM source_lookups"
         ).fetchall() == [("518", 0)]
-    assert _revisions(database_url) == ["0016"]
+    assert _revisions(database_url) == ["0017"]
 
 
 def test_only_a_found_lookup_may_be_manual(database_url: str) -> None:
@@ -533,7 +533,7 @@ def test_upgrading_from_manual_links_keeps_lookups_and_adds_progress(
             "SELECT source_key FROM source_lookups"
         ).fetchall() == [("alice-en",)]
         assert "refresh_progress" in _table_names(connection)
-    assert _revisions(database_url) == ["0016"]
+    assert _revisions(database_url) == ["0017"]
 
 
 def test_the_migrated_progress_table_has_one_row_per_source_and_person(
@@ -570,3 +570,99 @@ def test_downgrading_removes_only_the_progress_table(database_url: str) -> None:
         assert "refresh_progress" not in tables
         assert "source_lookups" in tables
     assert _revisions(database_url) == ["0015"]
+
+
+def test_upgrading_to_alerts_starts_existing_watches_alerts_at_the_upgrade(
+    database_url: str,
+) -> None:
+    config = _config(database_url)
+    command.upgrade(config, "0016")
+    with closing(_connect(database_url)) as connection:
+        connection.executescript(
+            f"""
+            INSERT INTO users (id, email, display_name, password_hash, is_active,
+                               is_admin, created_at)
+                VALUES ('u1', 'a@example.com', 'A', 'hash', 1, 1, {NOW});
+            INSERT INTO people (id, name, created_at) VALUES ('p1', 'Alice', {NOW});
+            INSERT INTO watches (id, user_id, person_id, created_at)
+                VALUES ('w1', 'u1', 'p1', {NOW});
+            """
+        )
+
+    command.upgrade(config, "head")
+
+    with closing(_connect(database_url)) as connection:
+        created, alerts_from = connection.execute(
+            "SELECT created_at, alerts_from FROM watches"
+        ).fetchone()
+        assert {"notification_events", "user_notifications"} <= _table_names(connection)
+    # The watch is from 2026-11-08; its alerts start at the upgrade, which is later.
+    assert created.startswith("2026-11-08")
+    assert alerts_from > created
+    assert _revisions(database_url) == ["0017"]
+
+
+def test_downgrading_alerts_drops_them_and_keeps_watches(database_url: str) -> None:
+    config = _config(database_url)
+    command.upgrade(config, "head")
+    with closing(_connect(database_url)) as connection:
+        connection.executescript(
+            f"""
+            INSERT INTO users (id, email, display_name, password_hash, is_active,
+                               is_admin, created_at)
+                VALUES ('u1', 'a@example.com', 'A', 'hash', 1, 1, {NOW});
+            INSERT INTO people (id, name, created_at) VALUES ('p1', 'Alice', {NOW});
+            INSERT INTO watches (id, user_id, person_id, created_at, alerts_from)
+                VALUES ('w1', 'u1', 'p1', {NOW}, {NOW});
+            """
+        )
+
+    command.downgrade(config, "0016")
+
+    with closing(_connect(database_url)) as connection:
+        assert "alerts_from" not in _columns(connection, "watches")
+        assert "user_notifications" not in _table_names(connection)
+        assert connection.execute("SELECT id FROM watches").fetchall() == [("w1",)]
+    assert _revisions(database_url) == ["0016"]
+
+
+def test_the_migrated_alert_tables_enforce_their_constraints(
+    database_url: str,
+) -> None:
+    command.upgrade(_config(database_url), "head")
+    event = f"""
+        INSERT INTO notification_events (id, event_key, convention_id, person_id, rev,
+                                         cancelled, created_at, updated_at)
+        VALUES (?, ?, 'c1', 'p1', ?, 0, {NOW}, {NOW})
+    """
+    alert = f"""
+        INSERT INTO user_notifications (id, user_id, event_id, rev, created_at,
+                                        raised_at)
+        VALUES (?, ?, ?, 1, {NOW}, {NOW})
+    """
+    with closing(_connect(database_url)) as connection:
+        connection.executescript(
+            f"""
+            INSERT INTO users (id, email, display_name, password_hash, is_active,
+                               is_admin, created_at)
+                VALUES ('u1', 'a@example.com', 'A', 'hash', 1, 1, {NOW});
+            INSERT INTO people (id, name, created_at) VALUES ('p1', 'Alice', {NOW});
+            INSERT INTO conventions (id, name, created_at, updated_at)
+                VALUES ('c1', 'Con', {NOW}, {NOW});
+            """
+        )
+        connection.execute(event, ("e1", "appear:c1:p1", 1))
+        connection.execute(alert, ("a1", "u1", "e1"))
+
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(event, ("e2", "appear:c1:p1", 1))
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(event, ("e3", "appear:other", 0))
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(alert, ("a2", "u1", "e1"))
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(alert, ("a3", "nobody", "e1"))
+
+        connection.execute("DELETE FROM conventions")
+        assert connection.execute("SELECT * FROM notification_events").fetchall() == []
+        assert connection.execute("SELECT * FROM user_notifications").fetchall() == []

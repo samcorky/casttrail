@@ -37,6 +37,10 @@ class Watch(Base):
         ForeignKey("productions.id", ondelete="CASCADE"), index=True
     )
     created_at: Mapped[datetime] = mapped_column(UtcDateTime, default=utc_now)
+    # Alerts are for appearances first seen from this moment on, so following someone
+    # never raises alerts about what was already known. Watches older than alerts
+    # themselves start from when alerts were added.
+    alerts_from: Mapped[datetime] = mapped_column(UtcDateTime, default=utc_now)
 
     person: Mapped[Person | None] = relationship(lazy="joined")
     production: Mapped[Production | None] = relationship(lazy="joined")

@@ -110,7 +110,7 @@ Alembic is set up at WP-1, and each slice adds only its own tables.
 | 6 | `notification_events`, `user_notifications` (with `read_at`). `notification_deliveries` and `notification_destinations` wait for the first sent channel. |
 | 7 | `collections`, `collection_items`, `signatures`, `eligibility_overrides` |
 
-Built so far: migrations 0001 to 0013 (0009 `job_runs`, 0010 `identity_decisions`, 0011 `matches`, 0012 `convention_merges`, 0013 source views).
+Built so far: migrations 0001 to 0017 (0009 `job_runs`, 0010 `identity_decisions`, 0011 `matches`, 0012 `convention_merges`, 0013 source views, 0014 and 0015 source lookups, 0016 refresh progress, 0017 alerts).
 
 ## 6. Work packages
 
@@ -311,7 +311,7 @@ Still open:
 
 ### WP-6 Alerts in the app
 No ntfy or email yet (owner's decision, 2026-11-16): the outbox, retries and sent channels move to section 9.
-- [ ] 6.1 `notification_events` and `user_notifications` (unique `user_id, event_key`, `rev`, `read_at`), event keys 🗄️ 🧪
+- [x] 6.1 `notification_events` and `user_notifications` (unique `user_id, event_id`, `rev`, `read_at`), event keys, and `watches.alerts_from` (migration 0017) 🗄️ 🧪
 - [ ] 6.2 Create alerts after each rematch from confirmed matches only: baseline sync suppression, future-only events, a material change bumps `rev` and marks the alert unread again 🧪
 - [ ] 6.3 Top-billed expansion for watched films and series 🧪 Also watched films and series through Comiconomicon's film pages (`/videomedia/<id>`, found by exact title and year), moved here from 5.5d
 - [ ] 6.4 Alerts page (newest first, mark read, mark all read) and an unread count in the nav, counted per request; each alert links to the event 👁️ DEMO
