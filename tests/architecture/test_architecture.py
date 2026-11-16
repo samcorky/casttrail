@@ -65,6 +65,7 @@ FRAMEWORK_FREE_PACKAGES = (
     "discovery",
     "identity",
     "matching",
+    "notifications",
     "watching",
 )
 
