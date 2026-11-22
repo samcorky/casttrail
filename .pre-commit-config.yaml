@@ -43,7 +43,7 @@ repos:
       - id: validate-pyproject
 
   - repo: https://github.com/renovatebot/pre-commit-hooks
-    rev: 265086176d1f94804899cf80d64f3c8906422d73 # frozen: 44.257.6
+    rev: 3565c66f2d58f34041a13ebc6d4132c008e52a74 # frozen: 44.257.9
     hooks:
       - id: renovate-config-validator
         name: Validate Renovate Config
