@@ -3,7 +3,7 @@ name = "casttrail"
 dynamic = ["version"]
 description = "Self-hosted tracker that alerts you when people you follow are announced as convention guests."
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.15"
 dependencies = [
     "aiosqlite>=0.21",
     "alembic>=1.16",
